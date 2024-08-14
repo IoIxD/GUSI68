@@ -138,7 +138,7 @@ protected:
 	uint32_t fNewCompletion;
 	uint32_t fCurCompletion;
 	uint32_t fCompletion;
-	friend pascal void GUSIOTNotify(GUSIOTSocket *, OTEventCode, OTResult, void *);
+	friend void GUSIOTNotify(GUSIOTSocket *, OTEventCode, OTResult, void *);
 
 	class Lock
 	{
@@ -174,6 +174,8 @@ protected:
 class GUSIOTStreamSocket : public GUSIOTSocket
 {
 public:
+	int fNextListener;
+
 	virtual GUSIOTSocket *Clone();
 
 	virtual void close();

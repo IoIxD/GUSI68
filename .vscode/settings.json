@@ -4,6 +4,8 @@
     "algorithm": "cpp",
     "bit": "cpp",
     "utility": "cpp",
-    "dnr.c": "cpp"
+    "dnr.c": "cpp",
+    "random": "cpp",
+    "limits": "cpp"
   }
 }

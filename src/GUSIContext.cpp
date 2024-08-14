@@ -533,3 +533,5 @@ GUSIThreadManagerProxy *GUSIThreadManagerProxy::MakeInstance()
 {
 	return new GUSIThreadManagerProxy;
 }
+
+GUSISigProcess *GUSIProcess::SigProcess() { return fSigProcess; }

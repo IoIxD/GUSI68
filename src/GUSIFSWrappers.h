@@ -49,6 +49,8 @@ OSErr GUSIFSSetFInfo(const FSSpec *spec, const FInfo *info);
 
 OSErr GUSIFSHGetVolParms(GUSIIOPBWrapper<HParamBlockRec> *pb);
 
+OSErr GUSIFSGetVolParms(short vRefNum, GetVolParmsInfoBuffer *volParms);
+
 OSErr GUSIFSCatMove(const FSSpec *spec, long dest);
 
 OSErr GUSIFSXGetVolInfo(GUSIIOPBWrapper<XVolumeParam> *pb);

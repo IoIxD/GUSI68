@@ -47,6 +47,7 @@ class GUSITimer;
 #if PRAGMA_STRUCT_ALIGN
 #pragma options align = native
 #endif
+#include "GUSISignal.h"
 
 class GUSIThreadManagerProxy
 {
@@ -89,7 +90,7 @@ public:
 	bool Threading();
 	void Yield(GUSIYieldMode wait);
 	void Wakeup();
-	GUSISigProcess *SigProcess() { return fSigProcess; }
+	GUSISigProcess *SigProcess();
 	void QueueForClose(GUSISocket *sock);
 
 	class A5Saver

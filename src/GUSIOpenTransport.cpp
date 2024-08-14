@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <OpenTransport.h>
 
 GUSI_USING_STD_NAMESPACE
 
@@ -59,12 +60,12 @@ GUSIOTSocket::GUSIOTSocket(GUSIOTStrategy *strategy)
 	fNewCompletion = 0;
 	fCompletion = 0;
 
-	SetAsyncMacError(
+	/*SetAsyncMacError(
 		OTAsyncOpenEndpoint(
 			fStrategy->CreateConfiguration(),
 			0, fStrategy->EndpointInfo(),
 			reinterpret_cast<OTNotifyProcPtr>(GUSIOTNotify),
-			this));
+			this));*/
 	AddContext();
 	MopupEvents();
 	while (!fAsyncError && !(fCompletion & CompleteMask(T_OPENCOMPLETE)))
@@ -80,7 +81,10 @@ GUSIOTSocket::GUSIOTSocket(GUSIOTStrategy *strategy)
 
 int GUSIOTSocket::BindToAddress(GUSIOTTBind *addr)
 {
-	fSockName = new (fEndpoint) GUSIOTTBind;
+	// TODO: "Use of deleted constructor 'GUSIOTTBind'". Find out why!
+	return -1;
+
+	/*fSockName = new (fEndpoint) GUSIOTTBind;
 	if (!fSockName)
 		return GUSISetPosixError(ENOMEM);
 	fCompletion &= ~CompleteMask(T_BINDCOMPLETE);
@@ -97,13 +101,13 @@ int GUSIOTSocket::BindToAddress(GUSIOTTBind *addr)
 	GUSIContext::Raise();
 	if (GUSISetPosixError(GetAsyncError()))
 	{
-		delete fSockName;
+		// delete fSockName;
 		fSockName = nil;
 
 		return -1;
 	}
 	else
-		return 0;
+		return 0;*/
 }
 
 GUSIOTStreamSocket::GUSIOTStreamSocket(GUSIOTStrategy *strategy)

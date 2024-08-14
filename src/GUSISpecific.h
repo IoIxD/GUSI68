@@ -70,7 +70,7 @@ public:
 
 	const GUSISpecific *Key() const { return &fKey; }
 	T *get(GUSISpecificTable *table);
-	// T *get() { return get(GUSIContext::Current()); }
+	T *get();
 
 protected:
 	GUSISpecific fKey;

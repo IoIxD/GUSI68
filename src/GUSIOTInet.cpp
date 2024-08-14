@@ -665,7 +665,7 @@ int GUSIOTUdpSocket::ioctl(unsigned int request, va_list arg)
 	else
 		return GUSIOTSocket::ioctl(request, arg);
 }
-@ void GUSIwithOTTcpSockets()
+void GUSIwithOTTcpSockets()
 {
 	gGUSIInetFactories.AddFactory(SOCK_STREAM, 0, GUSIOTTcpFactory::Instance());
 	GUSIOTNetDB::Instantiate();

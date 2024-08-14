@@ -11,7 +11,7 @@ project(os9fetch LANGUAGES C CXX)
 # `sources` and `data`
 
 include_directories(include/)
-
+include_directories(src/)
 add_compile_definitions(__STD_C)
 
 #GUSIConfig/**/**/**/*.c GUSIConfig/**/**/**/*.h GUSIConfig/**/**/**/*.cpp GUSIConfig/**/**/**/*.hpp 
