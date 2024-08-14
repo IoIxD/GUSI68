@@ -10,7 +10,7 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * [¤3 Deleted as of 22Jul99, see
+ * [ï¿½3 Deleted as of 22Jul99, see
  *     ftp://ftp.cs.berkeley.edu/pub/4bsd/README.Impt.License.Change
  *	   for details]
  * 4. Neither the name of the University nor the names of its contributors
@@ -33,7 +33,7 @@
  */
 
 #ifndef _INET_H_
-#define	_INET_H_
+#define _INET_H_
 
 /* Adapted for GUSI by Matthias Neeracher <neeri@iis.ee.ethz.ch> */
 
@@ -47,13 +47,13 @@
 #include <machine/endian.h>
 
 __BEGIN_DECLS
-in_addr_t	 	inet_addr __P((const char *));
-int		 		inet_aton __P((const char *, struct in_addr *));
-in_addr_t	 	inet_lnaof __P((struct in_addr));
-struct in_addr	inet_makeaddr __P((uint32_t , in_addr_t));
-in_addr_t	 	inet_netof __P((struct in_addr));
-in_addr_t		inet_network __P((const char *));
-char		     *inet_ntoa __P((struct in_addr));
+in_addr_t inet_addr(const char *);
+int inet_aton(const char *, struct in_addr *);
+in_addr_t inet_lnaof(struct in_addr);
+struct in_addr inet_makeaddr(uint32_t, in_addr_t);
+in_addr_t inet_netof(struct in_addr);
+in_addr_t inet_network(const char *);
+char *inet_ntoa(struct in_addr);
 __END_DECLS
 
 #endif /* !_INET_H_ */

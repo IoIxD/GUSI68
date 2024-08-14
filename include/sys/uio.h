@@ -10,7 +10,7 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * [¤3 Deleted as of 22Jul99, see
+ * [ï¿½3 Deleted as of 22Jul99, see
  *     ftp://ftp.cs.berkeley.edu/pub/4bsd/README.Impt.License.Change
  *	   for details]
  * 4. Neither the name of the University nor the names of its contributors
@@ -35,17 +35,18 @@
 /* Adapted for GUSI by Matthias Neeracher <neeri@iis.ee.ethz.ch> */
 
 #ifndef _SYS_UIO_H_
-#define	_SYS_UIO_H_
+#define _SYS_UIO_H_
 
-struct iovec {
-	void	*iov_base;	/* Base address. */
-	size_t	 iov_len;	/* Length. */
+struct iovec
+{
+	void *iov_base; /* Base address. */
+	size_t iov_len; /* Length. */
 };
 
 #include <sys/cdefs.h>
 
 __BEGIN_DECLS
-ssize_t	readv __P((int, const struct iovec *, int));
-ssize_t	writev __P((int, const struct iovec *, int));
+ssize_t readv(int, const struct iovec *, int);
+ssize_t writev(int, const struct iovec *, int);
 __END_DECLS
 #endif /* !_SYS_UIO_H_ */

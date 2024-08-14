@@ -11,7 +11,7 @@
 
 #include <Memory.h>
 
-void *GUSIContextQueue::element::operator new(size_t)
+void *element::operator new(size_t) throw()
 {
 	header *b;
 
@@ -40,7 +40,7 @@ void *GUSIContextQueue::element::operator new(size_t)
 	return e;
 }
 
-void GUSIContextQueue::element::operator delete(void *elem, size_t)
+void element::operator delete(void *elem, size_t)
 {
 	header *h = static_cast<header *>(elem);
 	header *b;

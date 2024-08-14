@@ -10,7 +10,7 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * [¤3 Deleted as of 22Jul99, see
+ * [ï¿½3 Deleted as of 22Jul99, see
  *     ftp://ftp.cs.berkeley.edu/pub/4bsd/README.Impt.License.Change
  *	   for details]
  * 4. Neither the name of the University nor the names of its contributors
@@ -58,37 +58,40 @@
 #ifndef _NETDB_H_
 #define _NETDB_H_
 
-#define	_PATH_HEQUIV	"/etc/hosts.equiv"
-#define	_PATH_HOSTS	"/etc/hosts"
-#define	_PATH_NETWORKS	"/etc/networks"
-#define	_PATH_PROTOCOLS	"/etc/protocols"
-#define	_PATH_SERVICES	"/etc/services"
+#define _PATH_HEQUIV "/etc/hosts.equiv"
+#define _PATH_HOSTS "/etc/hosts"
+#define _PATH_NETWORKS "/etc/networks"
+#define _PATH_PROTOCOLS "/etc/protocols"
+#define _PATH_SERVICES "/etc/services"
 
 /*
  * Structures returned by network data base library.  All addresses are
  * supplied in host order, and returned in network order (suitable for
  * use in system calls).
  */
-struct	hostent {
-	char	*h_name;	/* official name of host */
-	char	**h_aliases;	/* alias list */
-	int	h_addrtype;	/* host address type */
-	int	h_length;	/* length of address */
-	char	**h_addr_list;	/* list of addresses from name server */
-#define	h_addr	h_addr_list[0]	/* address, for backward compatiblity */
+struct hostent
+{
+	char *h_name;			  /* official name of host */
+	char **h_aliases;		  /* alias list */
+	int h_addrtype;			  /* host address type */
+	int h_length;			  /* length of address */
+	char **h_addr_list;		  /* list of addresses from name server */
+#define h_addr h_addr_list[0] /* address, for backward compatiblity */
 };
 
-struct	servent {
-	char	*s_name;	/* official service name */
-	char	**s_aliases;	/* alias list */
-	int	s_port;		/* port # */
-	char	*s_proto;	/* protocol to use */
+struct servent
+{
+	char *s_name;	  /* official service name */
+	char **s_aliases; /* alias list */
+	int s_port;		  /* port # */
+	char *s_proto;	  /* protocol to use */
 };
 
-struct	protoent {
-	char	*p_name;	/* official protocol name */
-	char	**p_aliases;	/* alias list */
-	int	p_proto;	/* protocol # */
+struct protoent
+{
+	char *p_name;	  /* official protocol name */
+	char **p_aliases; /* alias list */
+	int p_proto;	  /* protocol # */
 };
 
 /*
@@ -98,31 +101,31 @@ struct	protoent {
 
 extern int h_errno;
 
-#define	HOST_NOT_FOUND	1 /* Authoritative Answer Host not found */
-#define	TRY_AGAIN	2 /* Non-Authoritive Host not found, or SERVERFAIL */
-#define	NO_RECOVERY	3 /* Non recoverable errors, FORMERR, REFUSED, NOTIMP */
-#define	NO_DATA		4 /* Valid name, no data record of requested type */
-#define	NO_ADDRESS	NO_DATA		/* no address, look for MX record */
+#define HOST_NOT_FOUND 1   /* Authoritative Answer Host not found */
+#define TRY_AGAIN 2		   /* Non-Authoritive Host not found, or SERVERFAIL */
+#define NO_RECOVERY 3	   /* Non recoverable errors, FORMERR, REFUSED, NOTIMP */
+#define NO_DATA 4		   /* Valid name, no data record of requested type */
+#define NO_ADDRESS NO_DATA /* no address, look for MX record */
 
 #include <sys/cdefs.h>
 
 __BEGIN_DECLS
-void		endhostent __P((void));
-void		endprotoent __P((void));
-void		endservent __P((void));
-struct hostent	*gethostbyaddr __P((const void *, size_t, int));
-struct hostent	*gethostbyname __P((const char *));
-struct hostent	*gethostent __P((void));
-struct protoent	*getprotobyname __P((const char *));
-struct protoent	*getprotobynumber __P((int));
-struct protoent	*getprotoent __P((void));
-struct servent	*getservbyname __P((const char *, const char *));
-struct servent	*getservbyport __P((int, const char *));
-struct servent	*getservent __P((void));
-void		herror __P((const char *));
-char		*hstrerror __P((int));
-void		setprotoent __P((int));
-void		setservent __P((int));
+void endhostent(void);
+void endprotoent(void);
+void endservent(void);
+struct hostent *gethostbyaddr(const void *, size_t, int);
+struct hostent *gethostbyname(const char *);
+struct hostent *gethostent(void);
+struct protoent *getprotobyname(const char *);
+struct protoent *getprotobynumber(int);
+struct protoent *getprotoent(void);
+struct servent *getservbyname(const char *, const char *);
+struct servent *getservbyport(int, const char *);
+struct servent *getservent(void);
+void herror(const char *);
+char *hstrerror(int);
+void setprotoent(int);
+void setservent(int);
 __END_DECLS
 
 #endif /* !_NETDB_H_ */

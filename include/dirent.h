@@ -10,7 +10,7 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * [¤3 Deleted as of 22Jul99, see
+ * [ï¿½3 Deleted as of 22Jul99, see
  *     ftp://ftp.cs.berkeley.edu/pub/4bsd/README.Impt.License.Change
  *	   for details]
  * 4. Neither the name of the University nor the names of its contributors
@@ -35,22 +35,23 @@
 #ifndef _DIRENT_H_
 #define _DIRENT_H_
 
-struct dirent {
-	ino_t	d_ino;	/* file number of entry */
-	char	d_name[255 + 1];	/* name must be no longer than this */
+struct dirent
+{
+	ino_t d_ino;		  /* file number of entry */
+	char d_name[255 + 1]; /* name must be no longer than this */
 };
 
-typedef void *	DIR;
+typedef void *DIR;
 
 #include <sys/cdefs.h>
 
 __BEGIN_DECLS
-DIR *opendir __P((const char *));
-struct dirent *readdir __P((DIR *));
-void rewinddir __P((DIR *));
-int closedir __P((DIR *));
-long telldir __P((DIR *));
-void seekdir __P((DIR *, long));
+DIR *opendir(const char *);
+struct dirent *readdir(DIR *);
+void rewinddir(DIR *);
+int closedir(DIR *);
+long telldir(DIR *);
+void seekdir(DIR *, long);
 __END_DECLS
 
 #endif /* !_DIRENT_H_ */

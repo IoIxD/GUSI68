@@ -6,7 +6,9 @@
 #include <stdlib.h>
 #include <Memory.h>
 
-GUSI_USING_STD_NAMESPACE
+#include <algorithm>
+
+using std::min;
 
 GUSIScattGath::GUSIScattGath(const iovec *iov, int cnt, bool gather)
 	: fIo(iov), fCount(cnt), fScratch(nil), fGather(gather)
@@ -148,10 +150,14 @@ GUSIRingBuffer::GUSIRingBuffer(size_t bufsiz)
 	fValid = fSpare = 0;
 	fFree = bufsiz;
 
-	<< Initialize fields of [[GUSIRingBuffer]] >>
-
-		GUSI_SASSERT_INTERNAL(
-			Invariant(), "Invariant violated in GUSIRingBuffer::GUSIRingBuffer()!\n");
+	fInUse = false;
+	fLocked = 0;
+	fDeferred = nil;
+	fDeferredArg = nil;
+	fNewBuffer = nil;
+	fOldBuffer = nil;
+	GUSI_SASSERT_INTERNAL(
+		Invariant(), "Invariant violated in GUSIRingBuffer::GUSIRingBuffer()!\n");
 }
 
 void GUSIRingBuffer::ObsoleteBuffer()
@@ -201,9 +207,13 @@ void *GUSIRingBuffer::ProduceBuffer(size_t &len)
 
 	size_t requested_length = len;
 
-	<< Reset pointers if [[GUSIRingBuffer]] is empty >>
-
-		size_t streak = fEnd - fProduce;
+	if (!fValid)
+	{
+		fProduce = fConsume = fBuffer;
+		fSpare = 0;
+		fFree = fEnd - fBuffer;
+	}
+	size_t streak = fEnd - fProduce;
 	if (streak >= fFree)
 		streak = fFree;
 	else

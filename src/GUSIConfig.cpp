@@ -15,6 +15,8 @@
 #include <LowMem.h>
 #include <Script.h>
 
+#include "GUSIContext.h"
+
 #if PRAGMA_STRUCT_ALIGN
 #pragma options align = mac68k
 #endif
@@ -182,11 +184,11 @@ bool GUSIConfiguration::CmdPeriod(const EventRecord *event)
 	}
 	else
 		keyInfo = event->message;
-	short virtualKey = (event->message & kMaskVirtualKey) >> kShiftWord;
-	short keyCode = (event->modifiers & kMaskModifiers) | virtualKey;
-	UInt32 state = 0;
-	Handle hKCHR = nil;
-	Ptr KCHRPtr = reinterpret_cast<Ptr>(GetScriptManagerVariable(smKCHRCache));
+	virtualKey = (event->message & kMaskVirtualKey) >> kShiftWord;
+	keyCode = (event->modifiers & kMaskModifiers) | virtualKey;
+	state = 0;
+	hKCHR = nil;
+	KCHRPtr = reinterpret_cast<Ptr>(GetScriptManagerVariable(smKCHRCache));
 	if (!KCHRPtr)
 	{
 		short script = GetScriptManagerVariable(smKeyScript);
@@ -194,7 +196,6 @@ bool GUSIConfiguration::CmdPeriod(const EventRecord *event)
 		hKCHR = GetResource('KCHR', kcID);
 		KCHRPtr = *hKCHR;
 	}
-	short keyInfo;
 	if (KCHRPtr)
 	{
 		keyInfo = KeyTranslate(KCHRPtr, keyCode, &state);

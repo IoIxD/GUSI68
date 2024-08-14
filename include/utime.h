@@ -1,11 +1,6 @@
 /*-
- * Copyright (c) 1982, 1986, 1990, 1993, 1994
+ * Copyright (c) 1990, 1993
  *	The Regents of the University of California.  All rights reserved.
- * (c) UNIX System Laboratories, Inc.
- * All or some portions of this file are derived from material licensed
- * to the University of California by American Telephone and Telegraph
- * Co. or Unix System Laboratories, Inc. and are reproduced herein with
- * the permission of UNIX System Laboratories, Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -34,39 +29,24 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- *	@(#)ioctl.h	8.6 (Berkeley) 3/28/94
+ *	@(#)utime.h	8.1 (Berkeley) 6/2/93
  */
 
 /* Adapted for GUSI by Matthias Neeracher <neeri@iis.ee.ethz.ch> */
 
-#ifndef _SYS_IOCTL_H_
-#define _SYS_IOCTL_H_
+#ifndef _UTIME_H_
+#define _UTIME_H_
 
-#include <sys/ttycom.h>
-
-/*
- * Pun for SunOS prior to 3.2.  SunOS 3.2 and later support TIOCGWINSZ
- * and TIOCSWINSZ (yes, even 3.2-3.5, the fact that it wasn't documented
- * nonwithstanding).
- */
-struct ttysize
+struct utimbuf
 {
-	unsigned short ts_lines;
-	unsigned short ts_cols;
-	unsigned short ts_xxx;
-	unsigned short ts_yyy;
+	time_t actime;	/* Access time */
+	time_t modtime; /* Modification time */
 };
-#define TIOCGSIZE TIOCGWINSZ
-#define TIOCSSIZE TIOCSWINSZ
-
-#include <sys/ioccom.h>
-
-#include <sys/filio.h>
-#include <sys/sockio.h>
 
 #include <sys/cdefs.h>
 
 __BEGIN_DECLS
-int ioctl(int, unsigned long, ...);
+int utime(const char *, const struct utimbuf *);
 __END_DECLS
-#endif /* !_SYS_IOCTL_H_ */
+
+#endif /* !_UTIME_H_ */

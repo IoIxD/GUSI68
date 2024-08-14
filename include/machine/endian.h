@@ -10,7 +10,7 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * [¤3 Deleted as of 22Jul99, see
+ * [ï¿½3 Deleted as of 22Jul99, see
  *     ftp://ftp.cs.berkeley.edu/pub/4bsd/README.Impt.License.Change
  *	   for details]
  * 4. Neither the name of the University nor the names of its contributors
@@ -35,7 +35,7 @@
 /* Adapted for GUSI by Matthias Neeracher <neeri@iis.ee.ethz.ch> */
 
 #ifndef _ENDIAN_H_
-#define	_ENDIAN_H_
+#define _ENDIAN_H_
 
 /* xtonx() now defined in terms of inttypes -- neeri */
 
@@ -52,33 +52,33 @@
  * Definitions for byte order, according to byte significance from low
  * address to high.
  */
-#define	LITTLE_ENDIAN	1234	/* LSB first: i386, vax */
-#define	BIG_ENDIAN	4321	/* MSB first: 68000, ibm, net */
-#define	PDP_ENDIAN	3412	/* LSB first in word, MSW first in long */
+#define LITTLE_ENDIAN 1234 /* LSB first: i386, vax */
+#define BIG_ENDIAN 4321    /* MSB first: 68000, ibm, net */
+#define PDP_ENDIAN 3412    /* LSB first in word, MSW first in long */
 
-#define	BYTE_ORDER	BIG_ENDIAN
+#define BYTE_ORDER BIG_ENDIAN
 
 #include <sys/cdefs.h>
 
 __BEGIN_DECLS
-uint32_t	htonl __P((uint32_t));
-uint16_t	htons __P((uint16_t));
-uint32_t	ntohl __P((uint32_t));
-uint16_t	ntohs __P((uint16_t));
+uint32_t htonl(uint32_t);
+uint16_t htons(uint16_t);
+uint32_t ntohl(uint32_t);
+uint16_t ntohs(uint16_t);
 __END_DECLS
 
 /*
  * Macros for network/external number representation conversion.
  */
-#define	ntohl(x)	(x)
-#define	ntohs(x)	(x)
-#define	htonl(x)	(x)
-#define	htons(x)	(x)
+#define ntohl(x) (x)
+#define ntohs(x) (x)
+#define htonl(x) (x)
+#define htons(x) (x)
 
-#define	NTOHL(x)	(x)
-#define	NTOHS(x)	(x)
-#define	HTONL(x)	(x)
-#define	HTONS(x)	(x)
+#define NTOHL(x) (x)
+#define NTOHS(x) (x)
+#define HTONL(x) (x)
+#define HTONS(x) (x)
 
 #endif /* !_POSIX_SOURCE */
 #endif /* !_ENDIAN_H_ */

@@ -17,21 +17,21 @@ GUSISocketDomainRegistry::GUSISocketDomainRegistry()
 
 GUSISocket *GUSISocketDomainRegistry::socket(int domain, int type, int protocol)
 {
-	if (!GUSI_CASSERT_CLIENT(domain >= 0 && domain < AF_MAX) || !factory[domain])
+	if (!GUSI_CASSERT_CLIENT(domain >= 0 && domain < AF_MAX) || !factory[domain])
 		return GUSISetPosixError(EAFNOSUPPORT), static_cast<GUSISocket *>(nil);
 	return factory[domain]->socket(domain, type, protocol);
 }
 
 int GUSISocketDomainRegistry::socketpair(int domain, int type, int protocol, GUSISocket *s[2])
 {
-	if (!GUSI_CASSERT_CLIENT(domain >= 0 && domain < AF_MAX) || !factory[domain])
+	if (!GUSI_CASSERT_CLIENT(domain >= 0 && domain < AF_MAX) || !factory[domain])
 		return GUSISetPosixError(EAFNOSUPPORT);
 	return factory[domain]->socketpair(domain, type, protocol, s);
 }
 
 GUSISocketFactory *GUSISocketDomainRegistry::AddFactory(int domain, GUSISocketFactory *f)
 {
-	if (!GUSI_CASSERT_INTERNAL(domain >= 0 && domain < AF_MAX))
+	if (!GUSI_CASSERT_INTERNAL(domain >= 0 && domain < AF_MAX))
 		return nil;
 	GUSISocketFactory *old = factory[domain];
 	factory[domain] = f;
@@ -59,7 +59,7 @@ bool GUSISocketTypeRegistry::Find(int type, int protocol, bool exact, Entry *&fo
 		}
 		else if (
 
-			(ent->type == type || (!exact && !ent->type))
+			(ent->type == type || (!exact && !ent->type))
 
 			&& (ent->protocol == protocol || (!exact && (!ent->protocol || !protocol))))
 		{

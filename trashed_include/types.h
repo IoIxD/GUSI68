@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 1982, 1986, 1990, 1993, 1994
+ * Copyright (c) 1982, 1986, 1991, 1993
  *	The Regents of the University of California.  All rights reserved.
  * (c) UNIX System Laboratories, Inc.
  * All or some portions of this file are derived from material licensed
@@ -34,39 +34,65 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- *	@(#)ioctl.h	8.6 (Berkeley) 3/28/94
+ *	@(#)types.h	8.4 (Berkeley) 1/21/94
  */
 
 /* Adapted for GUSI by Matthias Neeracher <neeri@iis.ee.ethz.ch> */
 
-#ifndef _SYS_IOCTL_H_
-#define _SYS_IOCTL_H_
+__BEGIN_DECLS
 
-#include <sys/ttycom.h>
+#ifndef _SYS_TYPES_H_
+#define _SYS_TYPES_H_
+
+/* Machine type dependent parameters. */
+#include <machine/endian.h>
+
+#ifndef _POSIX_SOURCE
+typedef unsigned char u_char;
+typedef unsigned short u_short;
+typedef unsigned int u_int;
+typedef unsigned long u_long;
+typedef char *caddr_t; /* core address */
+#endif
+
+typedef unsigned long dev_t;      /* device number */
+typedef unsigned long gid_t;      /* group id */
+typedef unsigned long ino_t;      /* inode number */
+typedef unsigned short mode_t;    /* permissions */
+typedef unsigned short nlink_t;   /* link count */
+typedef long off_t;               /* file offset */
+typedef long pid_t;               /* process id */
+typedef unsigned long uid_t;      /* user id */
+typedef long suseconds_t;         /* Microseconds */
+typedef unsigned long useconds_t; /* Microseconds */
 
 /*
- * Pun for SunOS prior to 3.2.  SunOS 3.2 and later support TIOCGWINSZ
- * and TIOCSWINSZ (yes, even 3.2-3.5, the fact that it wasn't documented
- * nonwithstanding).
+ * This belongs in unistd.h, but is placed here to ensure that programs
+ * casting the second parameter of lseek to off_t will get the correct
+ * version of lseek.
  */
-struct ttysize
-{
-	unsigned short ts_lines;
-	unsigned short ts_cols;
-	unsigned short ts_xxx;
-	unsigned short ts_yyy;
-};
-#define TIOCGSIZE TIOCGWINSZ
-#define TIOCSSIZE TIOCSWINSZ
-
-#include <sys/ioccom.h>
-
-#include <sys/filio.h>
-#include <sys/sockio.h>
-
 #include <sys/cdefs.h>
+off_t lseek(int, off_t, int);
 
-__BEGIN_DECLS
-int ioctl(int, unsigned long, ...);
+#include <machine/ansi.h>
+
+/* Pthreads data types */
+#include <pthread.h>
+
+/* To avoid ugly namespace issues, we borrow all ANSI C defined types
+   from ANSI headers
+*/
+
+/* size_t */
+#include <stddef.h>
+/* time_t and clock_t */
+#include <time.h>
+
+#ifdef _BSD_SSIZE_T_
+typedef _BSD_SSIZE_T_ ssize_t;
+#undef _BSD_SSIZE_T_
+#endif
+
+#endif /* !_SYS_TYPES_H_ */
+
 __END_DECLS
-#endif /* !_SYS_IOCTL_H_ */

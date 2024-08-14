@@ -1,11 +1,6 @@
 /*-
- * Copyright (c) 1982, 1986, 1990, 1993, 1994
+ * Copyright (c) 1991, 1993
  *	The Regents of the University of California.  All rights reserved.
- * (c) UNIX System Laboratories, Inc.
- * All or some portions of this file are derived from material licensed
- * to the University of California by American Telephone and Telegraph
- * Co. or Unix System Laboratories, Inc. and are reproduced herein with
- * the permission of UNIX System Laboratories, Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -15,7 +10,7 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * [ï¿½3 Deleted as of 22Jul99, see
+ * [¤3 Deleted as of 22Jul99, see
  *     ftp://ftp.cs.berkeley.edu/pub/4bsd/README.Impt.License.Change
  *	   for details]
  * 4. Neither the name of the University nor the names of its contributors
@@ -34,39 +29,38 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- *	@(#)ioctl.h	8.6 (Berkeley) 3/28/94
+ *	@(#)compat.h	8.1 (Berkeley) 6/2/93
  */
 
 /* Adapted for GUSI by Matthias Neeracher <neeri@iis.ee.ethz.ch> */
 
-#ifndef _SYS_IOCTL_H_
-#define _SYS_IOCTL_H_
-
-#include <sys/ttycom.h>
+#ifndef	_COMPAT_H_
+#define	_COMPAT_H_
 
 /*
- * Pun for SunOS prior to 3.2.  SunOS 3.2 and later support TIOCGWINSZ
- * and TIOCSWINSZ (yes, even 3.2-3.5, the fact that it wasn't documented
- * nonwithstanding).
+ * If your system doesn't specify a max size for a SIZE_T, check
+ * to make sure this is the right one.
  */
-struct ttysize
-{
-	unsigned short ts_lines;
-	unsigned short ts_cols;
-	unsigned short ts_xxx;
-	unsigned short ts_yyy;
-};
-#define TIOCGSIZE TIOCGWINSZ
-#define TIOCSSIZE TIOCSWINSZ
+#ifndef SIZE_T_MAX
+#define	SIZE_T_MAX	UINT_MAX
+#endif
 
-#include <sys/ioccom.h>
+#define	index(a, b)			strchr(a, b)
+#define	rindex(a, b)		strrchr(a, b)
+#define	bzero(a, b)			memset(a, 0, b)
+#define	bcmp(a, b, n)		memcmp(a, b, n)
+#define	bcopy(a, b, n)		memmove(b, a, n)
 
-#include <sys/filio.h>
-#include <sys/sockio.h>
+/* POSIX 1003.2 RE limit. */
+#ifndef	_POSIX2_RE_DUP_MAX
+#define	_POSIX2_RE_DUP_MAX	255
+#endif
 
-#include <sys/cdefs.h>
+#ifndef	MAX
+#define	MAX(_a,_b)	((_a)<(_b)?(_b):(_a))
+#endif
+#ifndef	MIN
+#define	MIN(_a,_b)	((_a)<(_b)?(_a):(_b))
+#endif
 
-__BEGIN_DECLS
-int ioctl(int, unsigned long, ...);
-__END_DECLS
-#endif /* !_SYS_IOCTL_H_ */
+#endif /* !_COMPAT_H_ */
