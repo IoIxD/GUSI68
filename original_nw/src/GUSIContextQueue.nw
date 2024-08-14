@@ -1,0 +1,393 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Project	:	GUSI				-	Grand Unified Socket Interface
+% File		:	GUSIContext.nw		-	Thread and Process structures
+% Author	:	Matthias Neeracher
+% Language	:	C++
+% 
+% $Log: GUSIContextQueue.nw,v $
+% Revision 1.9  2001/01/17 08:45:13  neeri
+% Improve memory allocation safety somewhat
+%
+% Revision 1.8  2000/05/23 06:58:03  neeri
+% Improve formatting
+%
+% Revision 1.7  2000/03/15 07:22:06  neeri
+% Enforce alignment choices
+%
+% Revision 1.6  1999/08/26 05:45:00  neeri
+% Fixes for literate edition of source code
+%
+% Revision 1.5  1999/05/30 03:09:29  neeri
+% Added support for MPW compilers
+%
+% Revision 1.4  1999/03/17 09:05:06  neeri
+% Added GUSITimer, expanded docs
+%
+% Revision 1.3  1998/08/02 11:20:07  neeri
+% Fixed some typos
+%
+% Revision 1.2  1998/08/01 21:32:02  neeri
+% About ready for 2.0a1
+%
+% Revision 1.1  1998/01/25 21:02:43  neeri
+% Engine implemented, except for signals & scheduling
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\chapter{Context Queues}
+
+At all times through its existence, a [[GUSIContext]] will exist in various
+queues: A queue of all contexts, queues of contexts waiting on a socket
+event, a mutex, or a condition variable, and so on. Since a context is often
+in several queues simultaneously, it's better to define queues non-intrusively.
+<<GUSIContextQueue.h>>=
+#ifndef _GUSIContextQueue_
+#define _GUSIContextQueue_
+
+#ifndef GUSI_SOURCE
+
+typedef struct GUSIContextQueue GUSIContextQueue;
+#else
+
+#include <stdlib.h>
+
+<<Name dropping for file GUSIContextQueue>>
+
+#include <ConditionalMacros.h>
+
+#if PRAGMA_STRUCT_ALIGN
+#pragma options align=native
+#endif
+
+<<Definition of class [[GUSIContextQueue]]>>
+
+#if PRAGMA_STRUCT_ALIGN
+#pragma options align=reset
+#endif
+
+<<Inline member functions for class [[GUSIContextQueue]]>>
+#endif /* GUSI_SOURCE */
+
+#endif /* _GUSIContextQueue_ */
+@
+
+<<GUSIContextQueue.cp>>=
+#include "GUSIInternal.h"
+
+#define GUSI_DIAG GUSI_DIAG_CAUTIOUS
+#include "GUSIDiag.h"
+
+#include "GUSIContextQueue.h"
+#include "GUSIContext.h"
+
+#include <string.h>
+
+#include <Memory.h>
+
+<<Implementation of context queues>>
+@
+
+\section{Definition of context queues}
+
+We'd like to avoid having to include \texttt{GUSIContext} here, for reasons that
+should be rather obvious.
+<<Name dropping for file GUSIContextQueue>>=
+class GUSIContext;
+@ 
+
+The class [[GUSIContextQueue]] tries to present an interface that is a subset of
+what C++ standard library list template classes offer.
+<<Definition of class [[GUSIContextQueue]]>>=
+class GUSIContextQueue {
+public:
+	GUSIContextQueue();
+	~GUSIContextQueue();
+	
+	bool			empty();
+	GUSIContext *	front() const;
+	GUSIContext *	back() const;
+	void			push_front(GUSIContext * context);
+	void			push_back(GUSIContext * context);
+	void			push(GUSIContext * context) 		{ push_back(context); }
+	void			pop_front();
+	void			pop() 								{ pop_front(); }
+	void			remove(GUSIContext * context);
+	
+	void			Wakeup();
+
+	<<Define [[iterator]] for [[GUSIContextQueue]]>>
+private:
+	<<Privatissima of [[GUSIContextQueue]]>>
+};
+@ %def GUSIContextQueue
+
+We define a forward iterator, but no reverse iterator.
+<<Define [[iterator]] for [[GUSIContextQueue]]>>=
+struct element;
+class iterator {
+	friend class GUSIContextQueue;
+public:
+	iterator & operator++();
+	iterator operator++(int);
+	bool operator==(const iterator other) const;
+	GUSIContext * operator*();
+	GUSIContext * operator->();
+private:
+	<<Privatissima of [[GUSIContextQueue::iterator]]>>
+};
+
+iterator 		begin();
+iterator 		end();
+@ %def GUSIContextQueue::iterator
+
+\section{Implementation of context queues}
+
+Efficiency of context queues is quite important, so we provide a custom 
+allocator for queue elements.
+<<Privatissima of [[GUSIContextQueue]]>>=
+struct element {
+	GUSIContext *	fContext;
+	element *		fNext;
+	
+	element(GUSIContext * context, element * next = 0) 
+		: fContext(context), fNext(next) {}
+	void * operator new(size_t);
+	void   operator delete(void *, size_t);
+private:
+	<<Privatissima of [[GUSIContextQueue::element]]>>
+};
+@ %def GUSIContextQueue::element
+
+Elements are allocated in blocks of increasing size.
+<<Privatissima of [[GUSIContextQueue::element]]>>=
+struct header {
+	short	fFree;
+	short 	fMax;
+	header *fNext;
+};
+static header *	sBlocks;
+<<Implementation of context queues>>=
+GUSIContextQueue::element::header * GUSIContextQueue::element::sBlocks = 0;
+@ 
+
+[[operator new]] must be prepared to allocate a new block.
+<<Implementation of context queues>>=
+void * GUSIContextQueue::element::operator new(size_t)
+{
+	header * b;
+	
+	for (b = sBlocks; b; b = b->fNext)
+		if (b->fFree) 
+			break;
+	
+	if (!b) {
+		short max = sBlocks ? (sBlocks->fMax << 1) : 64;
+		b = reinterpret_cast<header *>(NewPtr(max << 3));
+		if (!b)
+			return 0;
+		memset(b, 0, max << 3);
+		b->fMax = max;
+		b->fFree= max-1; 
+		b->fNext= sBlocks;
+		sBlocks = b;
+	}
+	
+	element * e = reinterpret_cast<element *>(b);
+	while ((++e)->fContext)
+		;
+	--b->fFree;
+			
+	return e;
+}
+@
+
+To avoid borderline cases, [[operator delete]] only deletes a block if there
+are enough other free elements.
+<<Implementation of context queues>>=
+void GUSIContextQueue::element::operator delete(void * elem, size_t)
+{
+	header * h = static_cast<header *>(elem);
+	header * b;
+	header * p = 0;
+	
+	for (b = sBlocks; b; b = b->fNext)
+		if (h > b && h < b+b->fMax) {
+			memset(h, 0, sizeof(header));
+			if (++b->fFree == b->fMax-1) {
+				<<Delete [[b]] if enough free elements remain>>
+			}
+			return;
+		}			
+	// Can't reach
+}
+
+<<Delete [[b]] if enough free elements remain>>=
+int sum = 0;
+for (header * s = sBlocks; s; s = s->fNext)
+	if (s != b)
+		if ((sum += s->fFree) > 32) {
+			if (p)
+				p->fNext = b->fNext;
+			else
+				sBlocks = b->fNext;
+			DisposePtr(reinterpret_cast<Ptr>(b));
+			
+			break;
+		}
+@
+
+A [[GUSIContextQueue]] is a single linked list with a separate back pointer.
+<<Privatissima of [[GUSIContextQueue]]>>=
+element *	fFirst;
+element *	fLast;
+@
+
+<<Inline member functions for class [[GUSIContextQueue]]>>=
+inline GUSIContextQueue::GUSIContextQueue() 
+	: fFirst(0), fLast(0)
+{
+}
+@
+
+<<Implementation of context queues>>=
+GUSIContextQueue::~GUSIContextQueue()
+{
+	while (!empty())
+		pop_front();
+}
+@
+
+None of the member functions are very large, so we'll inline them.
+<<Inline member functions for class [[GUSIContextQueue]]>>=
+inline bool GUSIContextQueue::empty()
+{
+	return !fFirst;
+}
+
+inline GUSIContext * GUSIContextQueue::front() const
+{
+	return fFirst ? fFirst->fContext : reinterpret_cast<GUSIContext *>(0);
+}
+
+inline GUSIContext * GUSIContextQueue::back() const
+{
+	return fLast ? fLast->fContext : reinterpret_cast<GUSIContext *>(0);
+}
+
+inline void GUSIContextQueue::push_front(GUSIContext * context)
+{
+	fFirst = new element(context, fFirst);
+	if (!fLast)
+		fLast = fFirst;
+}
+
+inline void GUSIContextQueue::pop_front()
+{
+	if (element * e = fFirst) {
+		if (!(fFirst = fFirst->fNext))
+			fLast = 0;
+		delete e;
+	}
+}
+@
+
+Making [[remove]] inline as well would probably push things too far, though.
+<<Implementation of context queues>>=
+void GUSIContextQueue::remove(GUSIContext * context)
+{
+	if (fFirst) 
+		if (fFirst->fContext == context)
+			pop_front();
+		else {
+			element * prev = fFirst;
+			for (element * cur = prev->fNext; cur; cur = cur->fNext) 
+				if (cur->fContext == context) {
+					if (!(prev->fNext = cur->fNext)) // Delete last element
+						fLast = prev;
+					delete cur;
+					
+					return;
+				} else 
+					prev = cur;
+		}
+}
+@
+
+I'd love to have [[push_back]] inline, but it doesn't seem to work.
+<<Implementation of context queues>>=
+void GUSIContextQueue::push_back(GUSIContext * context)
+{
+	if (element * e = new element(context)) {
+		if (fLast)
+			fLast->fNext = e;
+		else 
+			fFirst = e;
+		fLast = e;
+	}
+}
+@
+
+[[Wakeup]] is the only context specific operation.
+<<Implementation of context queues>>=
+void GUSIContextQueue::Wakeup()
+{
+	GUSI_MESSAGE(("Wakeup #%h\n", this));
+	for (element * cur = fFirst; cur; cur = cur->fNext) 
+		cur->fContext->Wakeup();
+}
+@
+
+A [[GUSIContextQueue::iterator]] is just a wrapper for a 
+[[GUSIContextQueue::element]].
+<<Privatissima of [[GUSIContextQueue::iterator]]>>=
+element *	fCurrent;
+
+iterator(element * elt) : fCurrent(elt) {}
+iterator()				: fCurrent(0)   {}
+@
+
+The constructors are not public, so only [[begin]] and [[end]] call them.
+<<Inline member functions for class [[GUSIContextQueue]]>>=
+inline GUSIContextQueue::iterator GUSIContextQueue::begin()
+{
+	return iterator(fFirst);
+}
+
+inline GUSIContextQueue::iterator GUSIContextQueue::end()
+{
+	return iterator();
+}
+@
+
+<<Inline member functions for class [[GUSIContextQueue]]>>=
+inline GUSIContextQueue::iterator & GUSIContextQueue::iterator::operator++()
+{
+	fCurrent = fCurrent->fNext;
+	
+	return *this;
+}
+
+inline GUSIContextQueue::iterator GUSIContextQueue::iterator::operator++(int)
+{
+	GUSIContextQueue::iterator it(*this);
+	fCurrent = fCurrent->fNext;
+	
+	return it;
+}
+
+inline bool GUSIContextQueue::iterator::operator==(const iterator other) const
+{
+	return fCurrent == other.fCurrent;
+}
+
+inline GUSIContext * GUSIContextQueue::iterator::operator*()
+{
+	return fCurrent->fContext;
+}
+
+inline GUSIContext * GUSIContextQueue::iterator::operator->()
+{
+	return fCurrent->fContext;
+}
+@
+

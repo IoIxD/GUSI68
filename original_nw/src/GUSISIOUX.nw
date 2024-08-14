@@ -1,0 +1,285 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Project	:	GUSI				-	Grand Unified Socket Interface
+% File		:	GUSISIOUX.nw		-	SIOUX Support
+% Author	:	Matthias Neeracher
+% Language	:	C++
+% 
+% $Log: GUSISIOUX.nw,v $
+% Revision 1.8  2000/05/23 07:18:03  neeri
+% Improve formatting
+%
+% Revision 1.7  2000/03/06 06:03:29  neeri
+% Check device families for file paths
+%
+% Revision 1.6  1999/08/26 05:45:08  neeri
+% Fixes for literate edition of source code
+%
+% Revision 1.5  1999/06/08 04:31:30  neeri
+% Getting ready for 2.0b2
+%
+% Revision 1.4  1999/05/29 06:26:45  neeri
+% Fixed header guards
+%
+% Revision 1.3  1999/03/17 09:05:12  neeri
+% Added GUSITimer, expanded docs
+%
+% Revision 1.2  1998/11/22 23:07:01  neeri
+% Releasing 2.0a4 in a hurry
+%
+% Revision 1.1  1998/10/25 11:57:39  neeri
+% Ready to release 2.0a3
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\chapter{SIOUX Support}
+
+To combine GUSI with SIOUX, terminal I/O needs to interface with the SIOUX
+event handling.
+
+SIOUX support is installed implicitly through [[GUSISetupConsoleDescriptors]]
+<<GUSISIOUX.h>>=
+#ifndef _GUSISIOUX_
+#define _GUSISIOUX_
+
+#endif /* _GUSISIOUX_ */
+@
+
+<<GUSISIOUX.cp>>=
+#include "GUSIInternal.h"
+#include "GUSISIOUX.h"
+#include "GUSIDevice.h"
+#include "GUSIDescriptor.h"
+#include "GUSIBasics.h"
+#include "GUSIDiag.h"
+
+#include <LowMem.h>
+
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/ioctl.h>
+#include <errno.h>
+#include <console.h>
+
+<<Declaration of class [[GUSISIOUXSocket]]>>
+<<Declaration of class [[GUSISIOUXDevice]]>>
+<<Member functions for class [[GUSISIOUXSocket]]>>
+<<Member functions for class [[GUSISIOUXDevice]]>>
+<<SIOUX implementation of [[GUSISetupConsoleDescriptors]]>>
+@
+
+\section{Definition of [[GUSISIOUXDevice]]}
+
+A [[GUSISIOUXDevice]] is a singleton class supporting the standard [[open]]
+operation.
+<<Declaration of class [[GUSISIOUXDevice]]>>=
+class GUSISIOUXDevice : public GUSIDevice {
+public:
+	static GUSISIOUXDevice *	Instance();
+
+	<<Overridden member functions for class [[GUSISIOUXDevice]]>>
+private:
+	GUSISIOUXDevice() 								{}
+	
+	static GUSISIOUXDevice *	sInstance;
+};
+@ %def GUSISIOUXDevice
+
+\section{Definition of [[GUSISIOUXSocket]]}
+
+A [[GUSISIOUXSocket]] is another singleton class: There is only one SIOUX
+console per application.
+
+<<Declaration of class [[GUSISIOUXSocket]]>>=
+class GUSISIOUXSocket : public GUSISocket {
+public:
+	~GUSISIOUXSocket();
+	
+	<<Overridden member functions for class [[GUSISIOUXSocket]]>>
+
+	static GUSISIOUXSocket *	Instance();
+private:
+	static GUSISIOUXSocket *	sInstance;
+	
+	GUSISIOUXSocket();
+};
+@ %def GUSISIOUXSocket
+
+\section{Implementation of [[GUSISIOUXDevice]]}
+
+[[GUSISIOUXDevice]] is a singleton class.
+<<Member functions for class [[GUSISIOUXDevice]]>>=
+GUSISIOUXDevice * GUSISIOUXDevice::sInstance;
+<<Member functions for class [[GUSISIOUXDevice]]>>=
+GUSISIOUXDevice * GUSISIOUXDevice::Instance()
+{
+	if (!sInstance)
+		sInstance = new GUSISIOUXDevice();
+	return sInstance;
+}
+@
+
+[[GUSISIOUXDevice]] is prepared to handle an [[open]] on a limited set of names.
+<<Overridden member functions for class [[GUSISIOUXDevice]]>>=
+virtual bool Want(GUSIFileToken & file);
+<<Member functions for class [[GUSISIOUXDevice]]>>=
+bool GUSISIOUXDevice::Want(GUSIFileToken & file)
+{
+	switch (file.WhichRequest()) {
+	case GUSIFileToken::kWillOpen:
+		return file.IsDevice() && (file.StrStdStream(file.Path()) > -1);
+	default:
+		return false;
+	}
+}
+@
+
+[[open]] returns the sole instance of [[GUSISIOUXSocket]].
+<<Overridden member functions for class [[GUSISIOUXDevice]]>>=
+virtual GUSISocket * open(GUSIFileToken &, int flags);
+<<Member functions for class [[GUSISIOUXDevice]]>>=
+GUSISocket * GUSISIOUXDevice::open(GUSIFileToken &, int)
+{
+	return GUSISIOUXSocket::Instance();
+}
+@
+
+A SIOUX application connects to the three standard descriptors on startup.
+<<SIOUX implementation of [[GUSISetupConsoleDescriptors]]>>=
+void GUSISetupConsoleDescriptors()
+{
+	GUSIDescriptorTable * table = GUSIDescriptorTable::Instance();
+	GUSISIOUXSocket *     SIOUX = GUSISIOUXSocket::Instance();
+	
+	table->InstallSocket(SIOUX);
+	table->InstallSocket(SIOUX);
+	table->InstallSocket(SIOUX);
+}
+@
+
+\section{Implementation of [[GUSISIOUXSocket]]}
+
+A [[GUSISIOUXSocket]] is a dataless wrapper for the SIOUX
+library. To protect the sole instance from ever being deleted
+again, we artificially raise its reference count.
+<<Member functions for class [[GUSISIOUXSocket]]>>=
+GUSISIOUXSocket * GUSISIOUXSocket::sInstance;
+
+GUSISIOUXSocket * GUSISIOUXSocket::Instance()
+{
+	if (!sInstance)
+		if (sInstance = new GUSISIOUXSocket)
+			sInstance->AddReference();
+
+	return sInstance;
+}
+@
+
+On construction, we make sure to install the SIOUX event handler for all
+relevant elements.
+<<Member functions for class [[GUSISIOUXSocket]]>>=
+// This declaration lies about the return type
+extern "C" void SIOUXHandleOneEvent(EventRecord *userevent);
+
+GUSISIOUXSocket::GUSISIOUXSocket() 
+{
+	InstallConsole(0);
+	GUSISetHook(GUSI_EventHook+nullEvent, 	(GUSIHook)SIOUXHandleOneEvent);
+	GUSISetHook(GUSI_EventHook+mouseDown, 	(GUSIHook)SIOUXHandleOneEvent);
+	GUSISetHook(GUSI_EventHook+mouseUp, 	(GUSIHook)SIOUXHandleOneEvent);
+	GUSISetHook(GUSI_EventHook+updateEvt, 	(GUSIHook)SIOUXHandleOneEvent);
+	GUSISetHook(GUSI_EventHook+diskEvt, 	(GUSIHook)SIOUXHandleOneEvent);
+	GUSISetHook(GUSI_EventHook+activateEvt, (GUSIHook)SIOUXHandleOneEvent);
+	GUSISetHook(GUSI_EventHook+osEvt, 		(GUSIHook)SIOUXHandleOneEvent);
+}
+GUSISIOUXSocket::~GUSISIOUXSocket()
+{
+	RemoveConsole();
+}
+@
+
+Some member functions are fairly trivial wrappers.
+<<Overridden member functions for class [[GUSISIOUXSocket]]>>=
+ssize_t	read(const GUSIScatterer & buffer);
+<<Member functions for class [[GUSISIOUXSocket]]>>=
+ssize_t GUSISIOUXSocket::read(const GUSIScatterer & buffer)
+{
+	GUSIStdioFlush();
+	return buffer.SetLength(
+		ReadCharsFromConsole((char *) buffer.Buffer(), (int)buffer.Length()));
+}
+<<Overridden member functions for class [[GUSISIOUXSocket]]>>=
+ssize_t write(const GUSIGatherer & buffer);
+<<Member functions for class [[GUSISIOUXSocket]]>>=
+ssize_t GUSISIOUXSocket::write(const GUSIGatherer & buffer)
+{
+	return WriteCharsToConsole((char *) buffer.Buffer(), (int)buffer.Length());
+}
+<<Overridden member functions for class [[GUSISIOUXSocket]]>>=
+virtual int	ioctl(unsigned int request, va_list arg);
+<<Member functions for class [[GUSISIOUXSocket]]>>=
+int GUSISIOUXSocket::ioctl(unsigned int request, va_list)
+{
+	switch (request)	{
+	case FIOINTERACTIVE:
+		return 0;
+	default:
+		return GUSISetPosixError(EOPNOTSUPP);
+	}
+}
+@
+
+Since we know we're running on a pseudodevice, we can pass on that fact.
+<<Overridden member functions for class [[GUSISIOUXSocket]]>>=
+virtual int	fstat(struct stat * buf);
+<<Member functions for class [[GUSISIOUXSocket]]>>=
+int	GUSISIOUXSocket::fstat(struct stat * buf)
+{
+	GUSISocket::fstat(buf);
+	buf->st_mode =	S_IFCHR | 0666;
+	
+	return 0;
+}
+@
+
+And we also know we're a TTY.
+<<Overridden member functions for class [[GUSISIOUXSocket]]>>=
+virtual int	isatty();
+<<Member functions for class [[GUSISIOUXSocket]]>>=
+int GUSISIOUXSocket::isatty()
+{ 
+	return 1;
+}
+@
+
+[[select]] requires a walk of the event queue.
+<<Overridden member functions for class [[GUSISIOUXSocket]]>>=
+bool select(bool * canRead, bool * canWrite, bool *);
+<<Member functions for class [[GUSISIOUXSocket]]>>=
+static bool input_pending()
+{
+	QHdrPtr eventQueue = LMGetEventQueue();
+	EvQElPtr element = (EvQElPtr)eventQueue->qHead;
+	
+	// now, count the number of pending keyDown events.
+	while (element != nil) {
+		if (element->evtQWhat == keyDown || element->evtQWhat == autoKey)
+			return true;
+		element = (EvQElPtr)element->qLink;
+	}
+	
+	return false;
+}
+
+bool GUSISIOUXSocket::select(bool * canRead, bool * canWrite, bool *)
+{
+	bool cond = false;
+	if (canRead)
+		if (*canRead = input_pending())
+			cond = true;
+	if (canWrite)
+		cond = *canWrite = true;
+		
+	return cond;
+}
+@
+

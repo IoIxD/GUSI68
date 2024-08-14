@@ -1,0 +1,409 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Project	:	GUSI				-	Grand Unified Socket Interface
+% File		:	GUSIMTInet.nw		-	Common routines for MacTCP
+% Author	:	Matthias Neeracher
+% Language	:	C++
+% 
+% $Log: GUSIMTInet.nw,v $
+% Revision 1.14  2000/10/16 04:34:23  neeri
+% Releasing 2.1.2
+%
+% Revision 1.13  2000/05/23 07:03:25  neeri
+% Improve formatting
+%
+% Revision 1.12  1999/08/26 05:45:04  neeri
+% Fixes for literate edition of source code
+%
+% Revision 1.11  1999/08/02 07:02:43  neeri
+% Support for asynchronous errors and other socket options
+%
+% Revision 1.10  1999/06/30 07:42:06  neeri
+% Getting ready to release 2.0b3
+%
+% Revision 1.9  1999/05/29 06:26:43  neeri
+% Fixed header guards
+%
+% Revision 1.8  1999/04/29 05:33:19  neeri
+% Fix fcntl prototype
+%
+% Revision 1.7  1999/03/17 09:05:08  neeri
+% Added GUSITimer, expanded docs
+%
+% Revision 1.6  1998/10/25 11:57:35  neeri
+% Ready to release 2.0a3
+%
+% Revision 1.5  1998/10/11 16:45:16  neeri
+% Ready to release 2.0a2
+%
+% Revision 1.4  1998/02/11 12:57:12  neeri
+% PowerPC Build
+%
+% Revision 1.3  1998/01/25 20:53:55  neeri
+% Engine implemented, except for signals & scheduling
+%
+% Revision 1.2  1996/12/22 19:57:56  neeri
+% TCP streams work
+%
+% Revision 1.1  1996/12/16 02:12:40  neeri
+% TCP Sockets sort of work
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\chapter{Basic MacTCP code}
+
+A [[GUSIMTInetSocket]]Êdefines the infrastructure shared between
+MacTCP TCP and UDP sockets.
+<<GUSIMTInet.h>>=
+#ifndef _GUSIMTInet_
+#define _GUSIMTInet_
+
+#ifdef GUSI_SOURCE
+
+#include <sys/cdefs.h>
+
+__BEGIN_DECLS
+<<Definition of [[GUSIwithMTInetSockets]]>>
+__END_DECLS
+
+#ifdef GUSI_INTERNAL
+
+#include "GUSISocket.h"
+#include "GUSISocketMixins.h"
+
+#include <netinet/in.h>
+#include <MacTCP.h>
+
+<<Definition of class [[GUSIMTInetSocket]]>>
+
+#endif /* GUSI_INTERNAL */
+
+#endif /* GUSI_SOURCE */
+
+#endif /* _GUSIMTInet_ */
+@
+
+<<GUSIMTInet.cp>>=
+#include "GUSIInternal.h"
+#include "GUSIMTInet.h"
+#include "GUSIMTTcp.h"
+#include "GUSIMTUdp.h"
+#include "GUSIDiag.h"
+#include "GUSIFSWrappers.h"
+
+#include <stdlib.h>
+#include <errno.h>
+#include <algorithm>
+
+#include <Devices.h>
+
+GUSI_USING_STD_NAMESPACE
+
+<<Member functions for class [[GUSIMTInetSocket]]>>
+@
+
+\section{Definition of [[GUSIMTInetSocket]]}
+
+MacTCP related sockets are buffered, have a standard state model, and can be
+nonblocking.
+<<Definition of class [[GUSIMTInetSocket]]>>=
+class GUSIMTInetSocket : 
+	public 		GUSISocket, 
+	protected 	GUSISMBlocking,
+	protected	GUSISMState,
+	protected	GUSISMInputBuffer,
+	protected 	GUSISMOutputBuffer,
+	protected	GUSISMAsyncError
+{
+public:
+	GUSIMTInetSocket();
+	<<Overridden member functions for [[GUSIMTInetSocket]]>>
+	<<Definition of classes [[MiniWDS]] and [[MidiWDS]]>>
+	<<MacTCP driver management>>
+protected:
+	<<Data members for [[GUSIMTInetSocket]]>>
+};
+@ %def GUSIMTInetSocket
+
+All MacTCP related sockets need a [[StreamPtr]]; they store their own and 
+their peer's address away, and the save errors reported at interrupt time
+in an [[fAsyncError]]Êfield.
+<<Data members for [[GUSIMTInetSocket]]>>=
+StreamPtr	fStream;
+sockaddr_in	fSockAddr;
+sockaddr_in	fPeerAddr;
+@ %def GUSIMTInetSocket::fStream GUSIMTInetSocket::fSockAddr 
+@ %def GUSIMTInetSocket::fPeerAddr
+
+MacTCP I/O calls communicate by means of read and write data structures,
+of which we need only the most primitive variants. 
+<<Definition of classes [[MiniWDS]] and [[MidiWDS]]>>=
+#if PRAGMA_STRUCT_ALIGN
+	#pragma options align=mac68k
+#endif
+class MiniWDS {
+public:
+	u_short	fLength;
+	char * 	fDataPtr;
+	u_short fZero;
+
+	MiniWDS() : fZero(0)		{}
+	Ptr operator &()			{	return (Ptr)this;	}
+};
+class MidiWDS {
+public:
+	u_short	fLength;
+	char * 	fDataPtr;
+	u_short	fLength2;
+	char * 	fDataPtr2;
+	u_short fZero;
+
+	MidiWDS() : fZero(0)		{}
+	Ptr operator &()			{	return (Ptr)this;	}
+};
+#if PRAGMA_STRUCT_ALIGN
+	#pragma options align=reset
+#endif
+@ %def MiniWDS MidiWDS
+
+The only other interesting bit in the interface is the driver management, which
+arranges to open the MacTCP driver and domain name resolver at most once,
+as late as possible in the program (If you open some SLIP or PPP drivers 
+before the Toolbox is initialized, you'll wish you'd curled up by the fireside
+with a nice Lovecraft novel instead). [[Driver]] returns the driver reference
+number of the MacTCP driver. [[HostAddr]] returns our host's IP address.
+<<MacTCP driver management>>=
+static short	Driver();
+static u_long	HostAddr();
+@ %def GUSIMTInetSocket::Driver GUSIMTInetSocket::HostAddr
+
+\section{Implementation of [[GUSIMTInetSocket]]}
+
+[[Driver]] preserves error status in an [[OSErr]] 
+variable, initially [[1]] to convey unresolvedness.
+<<Data members for [[GUSIMTInetSocket]]>>=
+static short	sDrvrRefNum;
+static OSErr	sDrvrState;
+static u_long	sHostAddress;
+<<Member functions for class [[GUSIMTInetSocket]]>>=
+short 	GUSIMTInetSocket::sDrvrRefNum		=	0;
+OSErr 	GUSIMTInetSocket::sDrvrState		=	1;
+u_long	GUSIMTInetSocket::sHostAddress		=	0;
+@
+
+[[Driver]] opens the driver if necessary and stores its refnum.
+<<Member functions for class [[GUSIMTInetSocket]]>>=
+short GUSIMTInetSocket::Driver()
+{
+	if (sDrvrState == 1) 
+		sDrvrState = GUSIFSOpenDriver("\p.IPP", &sDrvrRefNum);
+
+	return sDrvrState ? 0 : sDrvrRefNum;
+}
+@
+
+[[HostAddr]] does an [[ipctlGetAddr]]Êcontrol call if necessary.
+<<Member functions for class [[GUSIMTInetSocket]]>>=
+u_long GUSIMTInetSocket::HostAddr()
+{
+	if (!sHostAddress && Driver()) {
+		GUSIIOPBWrapper<GetAddrParamBlock>	ga;
+		
+		ga->ioCRefNum 	= Driver();
+		ga->csCode 		= ipctlGetAddr;
+		
+		if (!ga.Control())
+			sHostAddress = ga->ourAddress;
+	}
+	return sHostAddress;
+}
+@
+
+Initial values should be fairly obvious.
+<<Member functions for class [[GUSIMTInetSocket]]>>=
+GUSIMTInetSocket::GUSIMTInetSocket()
+	: fStream(nil)
+{
+	memset(&fSockAddr, 0, sizeof(sockaddr_in));
+	fSockAddr.sin_family	= AF_INET;
+	
+	fPeerAddr = fSockAddr;
+}
+@
+
+[[bind]] for MacTCP sockets has the fatal flaw that it is totally unable to
+reserve a socket.
+<<Overridden member functions for [[GUSIMTInetSocket]]>>=
+virtual int bind(void * addr, socklen_t namelen);
+<<Member functions for class [[GUSIMTInetSocket]]>>=
+int GUSIMTInetSocket::bind(void * addr, socklen_t namelen)
+{
+	struct sockaddr_in *name	=	(struct sockaddr_in *)addr;
+	<<Sanity checks for [[GUSIMTInetSocket::bind]]>>
+	fSockAddr.sin_addr.s_addr 	= name->sin_addr.s_addr;
+	fSockAddr.sin_port 			= name->sin_port;
+	
+	return 0;
+}
+@
+
+The address to be passed must be up to a minimal standard of decency.
+For instance, the host address must be either the real IP number of
+our host or one of the two legitimate pseudo-addresses for 
+[["localhost"]].
+<<Sanity checks for [[GUSIMTInetSocket::bind]]>>=
+if (!GUSI_ASSERT_CLIENT(
+		namelen >= sizeof(struct sockaddr_in),
+		("bind: address len %d < %d\n", namelen, sizeof(struct sockaddr_in)))
+)
+	return GUSISetPosixError(EINVAL);
+if (!GUSI_ASSERT_CLIENT(
+		name->sin_family == AF_INET,
+		("bind: family %d != %d\n", name->sin_family, AF_INET))
+)
+	return GUSISetPosixError(EAFNOSUPPORT);
+if (!GUSI_SASSERT_CLIENT(!fSockAddr.sin_port, "bind: Socket already bound\n"))
+	return GUSISetPosixError(EINVAL);
+switch (name->sin_addr.s_addr) {
+default:
+	if (!GUSI_ASSERT_CLIENT(
+			name->sin_addr.s_addr == HostAddr(),
+			("bind: addr %08X != %08X\n", name->sin_addr.s_addr, HostAddr()))
+	)
+		return GUSISetPosixError(EADDRNOTAVAIL);
+case 0:
+case 0x7F000001:
+	break;
+}
+@
+
+[[getsockname]] and [[getpeername]] return the stored values.
+<<Overridden member functions for [[GUSIMTInetSocket]]>>=
+virtual int getsockname(void * addr, socklen_t * namelen);
+virtual int getpeername(void * addr, socklen_t * namelen);
+<<Member functions for class [[GUSIMTInetSocket]]>>=
+int GUSIMTInetSocket::getsockname(void *name, socklen_t *namelen)
+{
+	if (!GUSI_SASSERT_CLIENT(*namelen >= 0, "getsockname: passed negative length\n"))
+		return GUSISetPosixError(EINVAL);
+
+	memcpy(name, &fSockAddr, *namelen = min(*namelen, socklen_t(sizeof(sockaddr_in))));
+	return 0;
+}
+int GUSIMTInetSocket::getpeername(void *name, socklen_t *namelen)
+{
+	if (!GUSI_SASSERT_CLIENT(*namelen >= 0, "getpeername: passed negative length\n"))
+		return GUSISetPosixError(EINVAL);
+
+	memcpy(name, &fPeerAddr, *namelen = min(*namelen, socklen_t(sizeof(sockaddr_in))));
+	return 0;
+}
+@
+
+[[shutdown]] just delegates to [[GUSISMState]].
+<<Overridden member functions for [[GUSIMTInetSocket]]>>=
+virtual int shutdown(int how);
+<<Member functions for class [[GUSIMTInetSocket]]>>=
+int GUSIMTInetSocket::shutdown(int how)
+{
+	if (!GUSI_SASSERT_CLIENT(how >= 0 && how < 3, "shutdown: 0,1, or 2\n"))
+		return GUSISetPosixError(EINVAL);
+		
+	GUSISMState::Shutdown(how);
+	
+	return 0;
+}
+@
+
+[[fcntl]] handles the blocking support.
+<<Overridden member functions for [[GUSIMTInetSocket]]>>=
+virtual int fcntl(int cmd, va_list arg);
+<<Member functions for class [[GUSIMTInetSocket]]>>=
+int GUSIMTInetSocket::fcntl(int cmd, va_list arg)
+{
+	int	result;
+	
+	if (GUSISMBlocking::DoFcntl(&result, cmd, arg))
+		return result;
+	
+	GUSI_ASSERT_CLIENT(false, ("fcntl: illegal request %d\n", cmd));
+	
+	return GUSISetPosixError(EOPNOTSUPP);
+}
+@
+
+[[ioctl]] deals with blocking support and with [[FIONREAD]].
+<<Overridden member functions for [[GUSIMTInetSocket]]>>=
+virtual int ioctl(unsigned int request, va_list arg);
+<<Member functions for class [[GUSIMTInetSocket]]>>=
+int GUSIMTInetSocket::ioctl(unsigned int request, va_list arg)
+{
+	int	result;
+	
+	if (GUSISMBlocking::DoIoctl(&result, request, arg)
+	 || GUSISMInputBuffer::DoIoctl(&result, request, arg)
+	)
+		return result;
+	
+	GUSI_ASSERT_CLIENT(false, ("ioctl: illegal request %d\n", request));
+	
+	return GUSISetPosixError(EOPNOTSUPP);
+}
+@
+
+[[getsockopt]] and [[setsockopt]] are available for setting buffer sizes and 
+getting asynchronous errors.
+<<Overridden member functions for [[GUSIMTInetSocket]]>>=
+virtual int getsockopt(int level, int optname, void *optval, socklen_t * optlen);
+<<Member functions for class [[GUSIMTInetSocket]]>>=
+int GUSIMTInetSocket::getsockopt(int level, int optname, void *optval, socklen_t * optlen)
+{
+	int	result;
+	
+	if (GUSISMInputBuffer::DoGetSockOpt(&result, level, optname, optval, optlen)
+	 || GUSISMOutputBuffer::DoGetSockOpt(&result, level, optname, optval, optlen)
+	 || GUSISMAsyncError::DoGetSockOpt(&result, level, optname, optval, optlen)
+	)
+		return result;
+	
+	GUSI_ASSERT_CLIENT(false, ("getsockopt: illegal request %d\n", optname));
+	
+	return GUSISetPosixError(EOPNOTSUPP);
+}
+<<Overridden member functions for [[GUSIMTInetSocket]]>>=
+virtual int setsockopt(int level, int optname, void *optval, socklen_t optlen);
+<<Member functions for class [[GUSIMTInetSocket]]>>=
+int GUSIMTInetSocket::setsockopt(int level, int optname, void *optval, socklen_t optlen)
+{
+	int	result;
+	
+	if (GUSISMInputBuffer::DoSetSockOpt(&result, level, optname, optval, optlen)
+	 || GUSISMOutputBuffer::DoSetSockOpt(&result, level, optname, optval, optlen)
+	)
+		return result;
+	
+	GUSI_ASSERT_CLIENT(false, ("setsockopt: illegal request %d\n", optname));
+	
+	return GUSISetPosixError(EOPNOTSUPP);
+}
+@
+
+MacTCP sockets implement socket style calls.
+<<Overridden member functions for [[GUSIMTInetSocket]]>>=
+virtual bool Supports(ConfigOption config);
+<<Member functions for class [[GUSIMTInetSocket]]>>=
+bool GUSIMTInetSocket::Supports(ConfigOption config)
+{
+	return config == kSocketCalls;
+}
+@
+
+<<Definition of [[GUSIwithMTInetSockets]]>>=
+void GUSIwithMTInetSockets();
+<<Member functions for class [[GUSIMTInetSocket]]>>=
+void GUSIwithMTInetSockets()
+{
+	GUSIwithMTTcpSockets();
+	GUSIwithMTUdpSockets();
+}
+@
+

@@ -1,0 +1,1288 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Project	:	GUSI				-	Grand Unified Socket Interface
+% File		:	GUSIPOSIX.nw		-	POSIX/Socket wrappers
+% Author	:	Matthias Neeracher
+% Language	:	C++
+% 
+% $Log: GUSIPOSIX.nw,v $
+% Revision 1.27  2002/09/03 05:13:56  neeri
+% Reengineered signal handling to properly handle handlers that longjmp() [GUSI Bug #564063]
+%
+% Revision 1.26  2002/01/07 05:56:20  neeri
+% Compatibility fixes for CodeWarrior Pro 7
+%
+% Revision 1.25  2001/07/03 05:40:16  neeri
+% Fix truncate (MacPerl Bugs #436893)
+%
+% Revision 1.24  2001/05/10 07:37:02  neeri
+% Only copy required number of words in select (MacPerl Bug #421357)
+%
+% Revision 1.23  2001/04/09 05:03:36  neeri
+% Save errno in select()
+%
+% Revision 1.22  2001/01/17 08:58:06  neeri
+% Releasing 2.1.4
+%
+% Revision 1.21  2000/10/29 18:36:32  neeri
+% Fix time_t signedness issues
+%
+% Revision 1.20  2000/10/16 04:34:23  neeri
+% Releasing 2.1.2
+%
+% Revision 1.19  2000/06/12 04:24:50  neeri
+% Fix time, localtime, gmtime
+%
+% Revision 1.18  2000/05/23 07:15:30  neeri
+% Improve formatting
+%
+% Revision 1.17  2000/03/06 08:18:25  neeri
+% Fix sleep, usleep, chdir; new Yield system
+%
+% Revision 1.16  2000/01/17 01:41:21  neeri
+% Fix rename() mangling
+%
+% Revision 1.15  1999/12/13 03:01:48  neeri
+% Another select() fix
+%
+% Revision 1.14  1999/11/15 07:22:34  neeri
+% Safe context setup. Fix sleep checking.
+%
+% Revision 1.13  1999/09/09 07:21:22  neeri
+% Add support for inet_aton
+%
+% Revision 1.12  1999/08/26 05:45:06  neeri
+% Fixes for literate edition of source code
+%
+% Revision 1.11  1999/07/19 06:21:03  neeri
+% Add mkdir/rmdir, fix various file manager related bugs
+%
+% Revision 1.10  1999/07/07 04:17:42  neeri
+% Final tweaks for 2.0b3
+%
+% Revision 1.9  1999/06/28 06:04:59  neeri
+% Support interrupted calls
+%
+% Revision 1.8  1999/05/30 03:09:31  neeri
+% Added support for MPW compilers
+%
+% Revision 1.7  1999/04/29 05:33:18  neeri
+% Fix fcntl prototype
+%
+% Revision 1.6  1999/03/29 09:51:29  neeri
+% New configuration system with support for hardcoded configurations.
+%
+% Revision 1.5  1999/03/17 09:05:11  neeri
+% Added GUSITimer, expanded docs
+%
+% Revision 1.4  1998/10/25 11:35:19  neeri
+% chdir, getcwd, setxxxent
+%
+% Revision 1.3  1998/10/11 16:45:22  neeri
+% Ready to release 2.0a2
+%
+% Revision 1.2  1998/08/01 21:32:09  neeri
+% About ready for 2.0a1
+%
+% Revision 1.1  1998/01/25 21:02:49  neeri
+% Engine implemented, except for signals & scheduling
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\chapter{POSIX/Socket Wrappers}
+
+Now everything is in place to define the POSIX and socket routines
+themselves. As opposed to our usual practice, we don't declare the 
+exported routines here, as they all have been declared in [[unistd.h]]
+or [[sys/socket.h]] already. The exceptions are [[remove]] and [[rename]], 
+which are declared in [[stdio.h]], which we'd rather not include, and 
+various calls which are not consistently declared.
+<<GUSIPOSIX.h>>=
+#ifndef _GUSIPOSIX_
+#define _GUSIPOSIX_
+
+#include <signal.h>
+#include <errno.h>
+#include <sys/time.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/ioctl.h>
+#include <utime.h>
+#include <netdb.h>
+#include <arpa/inet.h>
+
+#include <MacTypes.h>
+
+__BEGIN_DECLS
+int remove(const char * path);
+int rename(const char *oldname, const char *newname);
+int fgetfileinfo(const char * path, OSType * creator, OSType * type);
+void fsetfileinfo(const char * path, OSType creator, OSType type);
+time_t time(time_t * timer);
+struct tm * localtime(const time_t * timer);
+struct tm * gmtime(const time_t * timer);
+time_t mktime(struct tm *timeptr);
+__END_DECLS
+
+#endif /* _GUSIPOSIX_ */
+@
+
+We try to distinguish between functions mentioned in the POSIX.1 standard,
+BSD functions which later became part of UNIX 98, and a few MPW specific 
+functions.
+<<GUSIPOSIX.cp>>=
+#include "GUSIInternal.h"
+#include "GUSIPOSIX.h"
+#include "GUSISocket.h"
+#include "GUSIFactory.h"
+#include "GUSIDevice.h"
+#include "GUSIDescriptor.h"
+#include "GUSIPipe.h"
+#include "GUSIConfig.h"
+#include "GUSIBasics.h"
+#include "GUSIDiag.h"
+#include "GUSINetDB.h"
+#include "GUSITimer.h"
+
+#include <LowMem.h>
+
+<<POSIX function wrappers>>
+<<Socket function wrappers>>
+<<MPW function wrappers>>
+@
+
+\section{Implementation of POSIX wrappers}
+
+[[pipe]] is in fact a special case of [[socketpair]], but we bypass the domain 
+registry because pipe sockets are not installed as a domain.
+<<POSIX function wrappers>>=
+int pipe(int * fd)
+{
+	GUSIErrorSaver			saveError;
+	GUSISocketFactory *		factory	= GUSIPipeFactory::Instance();
+	GUSIDescriptorTable *	table	= GUSIDescriptorTable::Instance();
+	GUSISocket * 			sock[2];
+	
+	if (!factory->socketpair(0, 0, 0, sock)) {
+		if ((fd[0] = table->InstallSocket(sock[0])) > -1)
+			if ((fd[1] = table->InstallSocket(sock[1])) > -1) {
+				shutdown(fd[0], 1);
+				shutdown(fd[1], 0);
+				
+				return 0;
+			} else
+				table->RemoveSocket(fd[0]);
+		sock[0]->close();
+		sock[1]->close();
+	}
+	if (!errno)
+		return GUSISetPosixError(ENOMEM);
+	else
+		return -1;
+}
+@ %def pipe
+
+[[fsync]] synchronizes a socket
+<<POSIX function wrappers>>=
+int fsync(int s)
+{
+	<<Translate descriptor [[s]] to [[GUSISocket * sock]] or return [[-1]]>>
+
+	return sock->fsync();
+}
+@ %def fsync
+
+[[close]] closes one file descriptor associated with a socket and deletes the 
+socket if this was the last desriptor.
+<<POSIX function wrappers>>=
+int close(int s)
+{
+	GUSIDescriptorTable *	table	= GUSIDescriptorTable::Instance();
+
+	return table->RemoveSocket(s);
+}
+@ %def close
+
+Many of the other routines are quite stereotypical: They translate their file
+descriptor argument to a [[GUSISocket]] and dispatch the call to it.
+<<Translate descriptor [[s]] to [[GUSISocket * sock]] or return [[-1]]>>=
+GUSISocket * sock	= GUSIDescriptorTable::LookupSocket(s);
+
+if (!sock)
+	return -1;
+@
+
+<<POSIX function wrappers>>=
+ssize_t read(int s, void *buffer, size_t buflen)
+{
+	<<Translate descriptor [[s]] to [[GUSISocket * sock]] or return [[-1]]>>
+	
+	return sock->read(buffer, buflen);
+}
+@ %def read
+
+<<POSIX function wrappers>>=
+static ssize_t HandleWriteErrors(ssize_t retval)
+{
+	if (retval == -1)
+		switch (errno) {
+		case EINTR:
+		case EWOULDBLOCK:
+		case EINPROGRESS:
+		case EALREADY:
+			break;
+		default:
+			GUSIConfiguration::Instance()->BrokenPipe();
+			break;
+		}
+	
+	return retval;
+}
+
+ssize_t write(int s, const void *buffer, size_t buflen)
+{
+	<<Translate descriptor [[s]] to [[GUSISocket * sock]] or return [[-1]]>>
+
+	return HandleWriteErrors(sock->write(buffer, buflen));
+}
+@ %def write
+
+All requests to [[fcntl]] except for [[F_DUPFD]] get dispatched to the socket.
+<<POSIX function wrappers>>=
+int fcntl(int s, int cmd, ...)
+{
+	va_list arglist;
+	va_start(arglist, cmd);
+	
+	<<Translate descriptor [[s]] to [[GUSISocket * sock]] or return [[-1]]>>
+
+	if (cmd == F_DUPFD) {
+		GUSIDescriptorTable *	table	= GUSIDescriptorTable::Instance();
+
+		return table->InstallSocket(sock, va_arg(arglist, int));
+	} else
+		return sock->fcntl(cmd, arglist);
+}
+@ %def fcntl
+
+[[dup]] and [[dup2]] are slight variations of the preceding.
+<<POSIX function wrappers>>=
+int dup(int s)
+{
+	GUSIDescriptorTable *	table	= GUSIDescriptorTable::Instance();
+
+	<<Translate descriptor [[s]] to [[GUSISocket * sock]] or return [[-1]]>>
+
+	return table->InstallSocket(sock);
+}
+
+int dup2(int s, int s1)
+{
+	GUSIDescriptorTable *	table	= GUSIDescriptorTable::Instance();
+
+	<<Translate descriptor [[s]] to [[GUSISocket * sock]] or return [[-1]]>>
+
+	table->RemoveSocket(s1);
+	return table->InstallSocket(sock, s1);
+}
+@ %def dup dup2
+
+<<POSIX function wrappers>>=
+int fstat(int s, struct stat * buf)
+{
+	<<Translate descriptor [[s]] to [[GUSISocket * sock]] or return [[-1]]>>
+
+	return sock->fstat(buf);
+}
+@ %def fstat
+
+MacOS soon will work with 64 bit file offsets, so [[off_t]] is defined as a 
+64 bit integer.
+<<POSIX function wrappers>>=
+off_t lseek(int s, off_t offset, int whence)
+{
+	<<Translate descriptor [[s]] to [[GUSISocket * sock]] or return [[-1]]>>
+
+	return sock->lseek(offset, whence);
+}
+@ %def lseek
+
+We also should define [[ttyname]] but that will have to wait.
+<<POSIX function wrappers>>=
+int isatty(int s)
+{
+	<<Translate descriptor [[s]] to [[GUSISocket * sock]] or return [[-1]]>>
+
+	return sock->isatty();
+}
+@ %def isatty
+
+Sleeping is simple, computing the rest time is not. For convenience, we also
+special case sleep(0) as a yield.
+<<POSIX function wrappers>>=
+u_int sleep(u_int seconds) 
+{	
+	if (!seconds) {
+		GUSIContext::Yield(kGUSIYield);
+		GUSIContext::Raise();
+		
+		return 0;
+	}
+	GUSITime start(GUSITime::Now());
+	GUSITimer * timer = new GUSITimer;
+	GUSIContext::CreateCurrent()->ClearWakeups();
+	timer->Sleep(GUSITime(static_cast<uint32_t>(seconds), GUSITime::seconds).Get(GUSITime::msecs));
+	GUSIContext::Yield(kGUSIBlock);
+	delete timer;
+	GUSIContext::Raise();
+	
+	seconds -= (GUSITime::Now() - start).Get(GUSITime::seconds);
+	
+	return (seconds & 0x80000000) ? 0 : seconds;
+}
+@ %def sleep
+
+The next calls also need the services of [[GUSIDeviceRegistry]]. [[open]] used
+both the [[GUSIDeviceRegistry]] and the [[GUSIDescriptorTable]].
+<<POSIX function wrappers>>=
+int	open(const char * path, int mode, ...)
+{
+	GUSIErrorSaver			saveError;
+	GUSIDeviceRegistry *	factory	= GUSIDeviceRegistry::Instance();
+	GUSIDescriptorTable *	table	= GUSIDescriptorTable::Instance();
+	GUSISocket * 			sock;
+	int						fd;
+	
+	if (sock = factory->open(path, mode)) {
+		if ((fd = table->InstallSocket(sock)) > -1)
+			return fd;
+		sock->close();
+	}
+	if (!errno)
+		return GUSISetPosixError(ENOMEM);
+	else
+		return -1;
+}
+@ %def open
+
+[[creat]] is just a special case for [[open]].
+<<POSIX function wrappers>>=
+int	creat(const char * path, ...)
+{
+	return open(path, O_WRONLY | O_TRUNC | O_CREAT);
+}
+@ %def creat
+
+[[remove]] remove a file.
+<<POSIX function wrappers>>=
+int	remove(const char * path)
+{
+	GUSIDeviceRegistry *	factory	= GUSIDeviceRegistry::Instance();
+	
+	return factory->remove(path);
+}
+@ %def remove
+
+[[unlink]] is the same as [[remove]].
+<<POSIX function wrappers>>=
+int	unlink(const char * path)
+{
+	GUSIDeviceRegistry *	factory	= GUSIDeviceRegistry::Instance();
+	
+	return factory->remove(path);
+}
+@ %def unlink
+
+[[rename]] renames a file.
+<<POSIX function wrappers>>=
+int rename(const char * oldname, const char * newname)
+{
+	GUSIDeviceRegistry *	factory	= GUSIDeviceRegistry::Instance();
+	
+	return factory->rename(oldname, newname);
+}
+@ %def rename
+
+[[stat]] and [[lstat]], which ultimately resolve to the same function,
+return information about the status of a file.
+<<POSIX function wrappers>>=
+int stat(const char * path, struct stat * buf)
+{
+	GUSIDeviceRegistry *	factory	= GUSIDeviceRegistry::Instance();
+	
+	return factory->stat(path, buf, false);
+}
+
+int lstat(const char * path, struct stat * buf)
+{
+	GUSIDeviceRegistry *	factory	= GUSIDeviceRegistry::Instance();
+	
+	return factory->stat(path, buf, true);
+}
+@ %def stat lstat
+
+[[chmod]] changes file protection flags as well as this is possible under MacOS.
+<<POSIX function wrappers>>=
+int chmod(const char * path, mode_t mode)
+{
+	GUSIDeviceRegistry *	factory	= GUSIDeviceRegistry::Instance();
+	
+	return factory->chmod(path, mode);
+}
+@ %def chmod
+
+[[utime]] modifies a file's modification time.
+<<POSIX function wrappers>>=
+int utime(const char * path, const utimbuf * times)
+{
+	GUSIDeviceRegistry *	factory	= GUSIDeviceRegistry::Instance();
+	
+	return factory->utime(path, times);
+}
+@ %def utime
+
+[[access]] checks the access permissions for a file.
+<<POSIX function wrappers>>=
+int access(const char * path, int mode)
+{
+	GUSIDeviceRegistry *	factory	= GUSIDeviceRegistry::Instance();
+	
+	return factory->access(path, mode);
+}
+@ %def access
+
+[[mkdir]] and [[rmdir]] create and delete a directory, respectively.
+<<POSIX function wrappers>>=
+int	mkdir(const char * path, ...)
+{
+	GUSIDeviceRegistry *	factory	= GUSIDeviceRegistry::Instance();
+	
+	return factory->mkdir(path);
+}
+
+int rmdir(const char * path)
+{
+	GUSIDeviceRegistry *	factory	= GUSIDeviceRegistry::Instance();
+	
+	return factory->rmdir(path);
+}
+@
+
+[[opendir]] returns an instance of a derived class of [[GUSIDirectory]].
+<<POSIX function wrappers>>=
+typedef GUSIDirectory * GUSIDirPtr;
+
+DIR * opendir(const char * path)
+{
+	GUSIDeviceRegistry *	factory	= GUSIDeviceRegistry::Instance();
+	
+	GUSIDirectory * dir = factory->opendir(path);
+	
+	return dir ? reinterpret_cast<DIR *>(new GUSIDirPtr(dir)) : 0;
+}
+@ %def opendir
+
+The other directory functions then dispatch on the [[GUSIDirectory]]
+without needing the [[GUSIDeviceRegistry]]. [[readdir]] reads the next
+directory entry.
+<<POSIX function wrappers>>=
+dirent * readdir(DIR * dir)
+{
+	return GUSIDirPtr(*dir)->readdir();
+}
+@ %def readdir
+
+[[telldir]] saves the current directory position, [[seekdir]] sets it, rewinddir
+sets it to the beginning.
+<<POSIX function wrappers>>=
+long telldir(DIR * dir)
+{
+	return GUSIDirPtr(*dir)->telldir();
+}
+
+void seekdir(DIR * dir, long pos)
+{
+	GUSIDirPtr(*dir)->seekdir(pos);
+}
+
+void rewinddir(DIR * dir)
+{
+	GUSIDirPtr(*dir)->seekdir(1);
+}
+@ %def telldir seekdir rewinddir
+
+[[closedir]] closes the directory stream.
+<<POSIX function wrappers>>=
+int closedir(DIR * dir)
+{
+	delete GUSIDirPtr(*dir);
+	delete dir;
+	
+	return 0;
+}
+@ %def closedir
+
+[[chdir]] changes the default directory.
+<<POSIX function wrappers>>=
+int chdir(const char * dir)
+{
+	GUSIFileSpec	directory(dir);
+	
+	if (directory.Error())
+		return GUSISetMacError(directory.Error());	
+	else if (!directory.Exists())
+		return GUSISetPosixError(ENOENT);
+	
+	(++directory).SetDefaultDirectory();
+	
+	return 0;
+} 
+@ %def chdir
+
+[[getcwd]] returns the path to the default directory.
+<<POSIX function wrappers>>=
+char *getcwd(char * buf, size_t size)
+{
+	GUSIFileSpec	cwd;
+	char * 			res;
+	
+	if (cwd.GetDefaultDirectory())
+		return GUSISetMacError(cwd.Error()), static_cast<char *>(nil);
+		
+	res = (--cwd).FullPath();
+	
+	if (size < strlen(res)+1)
+		return GUSISetPosixError(size > 0 ? ERANGE : EINVAL), 
+			static_cast<char *>(nil);
+	if (!buf && !(buf = (char *) malloc(size)))
+		return GUSISetPosixError(ENOMEM), static_cast<char *>(nil);
+
+	strcpy(buf, res);
+	
+	return buf;
+}
+@ %def getcwd
+
+[[time]] returns the time in seconds since 1904. The MSL version uses 1970; the
+present version conforms more to my Mac traditionalistic outlook. You will see an
+unpleasant number of [[reinterpret_cast]] expressions in the following routines
+because some of our compilers want [[time_t]] to be [[long]] and some want it to be 
+[[unsigned long]].
+<<POSIX function wrappers>>=
+time_t time(time_t * timer)
+{
+	time_t t;
+	
+	if (!timer) 
+		timer = &t;
+		
+	GetDateTime(reinterpret_cast<unsigned long*>(timer));
+	
+	return *timer;
+}
+@ %def time
+
+[[gettimeofday]] returns a somewhat more accurate time than [[time]].
+<<POSIX function wrappers>>=
+int	gettimeofday(struct timeval * tv, struct timezone * tz)
+{
+	*tv = (timeval)GUSITime::Now();
+	if (tz)
+		*tz = GUSITime::Zone();
+	
+	return 0;
+}
+@ %def gettimeofday
+
+[[localtime]] returns the local time in a broken down record, [[gmtime]] does the
+same with UTC time. Our versions measure from 1904 and are thread safe.
+<<POSIX function wrappers>>=
+extern "C" void GUSIKillTM(void * t) 
+{
+	delete reinterpret_cast<tm *>(t);
+}
+
+static tm * get_tm()
+{
+	static GUSISpecificData<tm, GUSIKillTM>	sTM;
+	
+	return sTM.get();
+}
+
+struct tm * localtime(const time_t * timer)
+{
+	tm * t = get_tm();
+	*t = GUSITime(static_cast<unsigned long>(*timer), GUSITime::seconds);
+	t->tm_isdst = GUSITime::Zone().tz_dsttime != 0;	
+	return t;
+}
+
+struct tm * gmtime(const time_t * timer)
+{
+	tm * t = get_tm();
+	*t = GUSITime(static_cast<unsigned long>(*timer), GUSITime::seconds).Local2GMTime();
+	t->tm_isdst = 0;	
+	return t;
+}
+@ %def localtime gmtime
+
+[[mktime]] parses a [[struct tm]].
+<<POSIX function wrappers>>=
+time_t mktime(struct tm *timeptr)
+{
+	return static_cast<time_t>(GUSITime(*timeptr).UGet(GUSITime::seconds));
+}
+@ %def mktime
+
+\section{Implementation of Socket wrappers}
+
+[[getdtablesize]] returns the size of the descriptor table.
+<<Socket function wrappers>>=
+int getdtablesize()
+{
+	return GUSIDescriptorTable::SIZE;
+}
+@ %def getdtablesize
+
+[[socket]] creates a socket and installs it in the descriptor table.
+<<Socket function wrappers>>=
+int socket(int domain, int type, int protocol)
+{
+	GUSIErrorSaver			saveError;
+	GUSISocketFactory *		factory	= GUSISocketDomainRegistry::Instance();
+	GUSIDescriptorTable *	table	= GUSIDescriptorTable::Instance();
+	GUSISocket * 			sock;
+	int						fd;
+	
+	if (sock = factory->socket(domain, type, protocol)) {
+		if ((fd = table->InstallSocket(sock)) > -1)
+			return fd;
+		sock->close();
+	}
+	if (!errno)
+		return GUSISetPosixError(ENOMEM);
+	else
+		return -1;
+}
+@ %def socket
+
+[[socketpair]] works similar to [[socket]], although the opportunity for problems
+is a bit greater.
+<<Socket function wrappers>>=
+int socketpair(int domain, int type, int protocol, int * sv)
+{
+	GUSIErrorSaver			saveError;
+	GUSISocketFactory *		factory	= GUSISocketDomainRegistry::Instance();
+	GUSIDescriptorTable *	table	= GUSIDescriptorTable::Instance();
+	GUSISocket * 			sock[2];
+	
+	if (!factory->socketpair(domain, type, protocol, sock)) {
+		if ((sv[0] = table->InstallSocket(sock[0])) > -1)
+			if ((sv[1] = table->InstallSocket(sock[1])) > -1)
+				return 0;
+			else
+				table->RemoveSocket(sv[0]);
+		sock[0]->close();
+		sock[1]->close();
+	}
+	if (!errno)
+		return GUSISetPosixError(ENOMEM);
+	else
+		return -1;
+}
+@ %def socketpair
+
+[[bind]] binds a socket to a name.
+<<Socket function wrappers>>=
+int bind(int s, const struct sockaddr *name, socklen_t namelen)
+{
+	<<Translate descriptor [[s]] to [[GUSISocket * sock]] or return [[-1]]>>
+	return sock->bind((void *) name, namelen);
+}
+@ %def bind
+
+[[connect]] connects a socket to a named peer.
+<<Socket function wrappers>>=
+int connect(int s, const struct sockaddr *addr, socklen_t addrlen)
+{
+	<<Translate descriptor [[s]] to [[GUSISocket * sock]] or return [[-1]]>>
+	return sock->connect((void *) addr, addrlen);
+}
+@ %def connect
+
+[[listen]] puts a socket in passive mode.
+<<Socket function wrappers>>=
+int listen(int s, int qlen)
+{
+	<<Translate descriptor [[s]] to [[GUSISocket * sock]] or return [[-1]]>>
+	return sock->listen(qlen);
+}
+@ %def listen
+
+[[accept]] accepts a connection from another socket.
+<<Socket function wrappers>>=
+int accept(int s, struct sockaddr *addr, socklen_t *addrlen)
+{
+	GUSIDescriptorTable *	table	= GUSIDescriptorTable::Instance();
+
+	<<Translate descriptor [[s]] to [[GUSISocket * sock]] or return [[-1]]>>
+
+	if (sock = sock->accept(addr, addrlen))
+		if ((s = table->InstallSocket(sock)) != -1)
+			return s;
+		else
+			sock->close();
+
+	return -1;
+}
+@ %def accept
+
+<<Socket function wrappers>>=
+ssize_t readv(int s, const struct iovec *iov, int count)
+{
+	<<Translate descriptor [[s]] to [[GUSISocket * sock]] or return [[-1]]>>
+
+	return sock->read(GUSIScatterer(iov, count));
+}
+@ %def readv
+
+<<Socket function wrappers>>=
+ssize_t recv(int s, void *buffer, size_t buflen, int flags)
+{
+	<<Translate descriptor [[s]] to [[GUSISocket * sock]] or return [[-1]]>>
+
+	socklen_t 	fromlen 	=	0;
+
+	return sock->recvfrom(buffer, buflen, flags, nil, &fromlen);
+}
+@ %def recv
+
+<<Socket function wrappers>>=
+ssize_t recvfrom(
+	int s, void *buffer, size_t buflen, int flags, struct sockaddr *from, socklen_t *fromlen)
+{
+	<<Translate descriptor [[s]] to [[GUSISocket * sock]] or return [[-1]]>>
+
+	return sock->recvfrom(buffer, buflen, flags, from, fromlen);
+}
+@ %def recvfrom
+
+<<Socket function wrappers>>=
+ssize_t recvmsg(int s, struct msghdr *msg, int flags)
+{
+	<<Translate descriptor [[s]] to [[GUSISocket * sock]] or return [[-1]]>>
+
+	return sock->recvmsg(msg, flags);
+}
+@ %def recvmsg
+
+<<Socket function wrappers>>=
+ssize_t writev(int s, const struct iovec *iov, int count)
+{
+	<<Translate descriptor [[s]] to [[GUSISocket * sock]] or return [[-1]]>>
+
+	return HandleWriteErrors(sock->write(GUSIGatherer(iov, count)));
+}
+@ %def writev
+
+<<Socket function wrappers>>=
+ssize_t send(int s, const void *buffer, size_t buflen, int flags)
+{
+	<<Translate descriptor [[s]] to [[GUSISocket * sock]] or return [[-1]]>>
+
+	return HandleWriteErrors(sock->sendto(buffer, buflen, flags, nil, 0));
+}
+@ %def send
+
+<<Socket function wrappers>>=
+ssize_t sendto(
+	int s, const void *buffer, size_t buflen, int flags, const struct sockaddr *to, socklen_t tolen)
+{
+	<<Translate descriptor [[s]] to [[GUSISocket * sock]] or return [[-1]]>>
+
+	return HandleWriteErrors(sock->sendto(buffer, buflen, flags, to, tolen));
+}
+@ %def sendto
+
+<<Socket function wrappers>>=
+ssize_t sendmsg(int s, const struct msghdr *msg, int flags)
+{
+	<<Translate descriptor [[s]] to [[GUSISocket * sock]] or return [[-1]]>>
+
+	return HandleWriteErrors(sock->sendmsg(msg, flags));
+}
+@ %def sendmsg
+
+[[select]] is quite complex, so we break it up. [[select_once]] polls all 
+file descriptors once.
+<<Socket function wrappers>>=
+static int select_once(int width,
+	fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
+	fd_set *readres, fd_set *writeres, fd_set *exceptres)
+{
+	bool 	r, w, e;
+	bool *	canRead;
+	bool *	canWrite;
+	bool *	canExcept;
+	int		count = 0;
+	
+	for (int s = 0; s < width ; ++s)  {
+		canRead = (readfds && FD_ISSET(s,readfds)) ? &r : nil;
+		canWrite = (writefds && FD_ISSET(s,writefds)) ? &w : nil;
+		canExcept = (exceptfds && FD_ISSET(s,exceptfds)) ? &e : nil;
+		if (canRead || canWrite || canExcept) {
+			GUSISocket * sock = GUSIDescriptorTable::LookupSocket(s);
+			
+			if (!GUSI_ASSERT_EXTERNAL(sock, ("Socket %d closed in select\n", s)))
+				return count ? count : -1;
+				
+			r = w = e = false;
+			if (sock->select(canRead, canWrite, canExcept))
+				count += (canRead && *canRead)+(canWrite && *canWrite)+(canExcept && *canExcept);
+			if (r)
+				FD_SET(s,readres);
+			if (w)
+				FD_SET(s,writeres);
+			if (e)
+				FD_SET(s,exceptres);
+		}
+	}
+	
+	return count;
+}
+@ %def select_once
+
+[[select_sleep]] sleeps as long as [[canSleep]] allows.
+<<Socket function wrappers>>=
+static bool select_sleep(bool canSleep)
+{
+	if (canSleep) {
+		return GUSIContext::Yield(kGUSIBlock);
+	} else {
+		return GUSIContext::Yield(kGUSIPoll);
+	}
+}
+@ %def select_sleep
+[[select_forever]] keeps calling [[select_once]] until one of the file
+descriptors triggers.
+<<Socket function wrappers>>=
+static int select_forever(bool canSleep, int width, 
+	fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
+	fd_set *readres, fd_set *writeres, fd_set *exceptres)
+{
+	int 		count;
+	
+	for (;;) {
+		count = 
+			select_once(width, 
+				readfds, writefds, exceptfds,
+				readres, writeres, exceptres);
+		if (count)
+			break;
+		if (select_sleep(canSleep))
+			return GUSISetPosixError(EINTR);
+	} 
+	
+	return count;			
+}
+@ %def select_forever
+
+[[select_timed]] keeps calling [[select_once]] until one of the file
+descriptors triggers or the timer runs out.
+<<Socket function wrappers>>=
+static int select_timed(bool canSleep, int width,
+	fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
+	fd_set *readres, fd_set *writeres, fd_set *exceptres,
+	struct timeval *timeout)
+{
+	int 		count;
+	GUSITimer	timer;
+	
+	timer.MicroSleep(GUSITime(*timeout).Get(GUSITime::usecs));
+	for (;;) {
+		count = 
+			select_once(width, 
+				readfds, writefds, exceptfds,
+				readres, writeres, exceptres);
+		if (count || timer.Expired())
+			break;
+		if (select_sleep(canSleep))
+			return GUSISetPosixError(EINTR);
+	}
+	
+	return count;			
+}
+@ %def select_timed
+
+Even so, [[select]] is still a heavyweight.
+<<Socket function wrappers>>=
+int select(int width, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, struct timeval *timeout)
+{
+	bool		canSleep	= true;
+	int 		count 		= 0;
+	fd_set 		readres;	FD_ZERO(&readres);
+	fd_set 		writeres;	FD_ZERO(&writeres);
+	fd_set 		exceptres;	FD_ZERO(&exceptres);
+	
+	<<Check that all specified file descriptors are valid or [[return -1]]>>
+	<<Call [[pre_select]] for all file descriptors and determine [[canSleep]]>>
+	if (!timeout) {
+		count = 
+			select_forever(canSleep, width,
+				readfds, writefds, exceptfds,
+				&readres, &writeres, &exceptres);
+	} else if (timeout->tv_sec || timeout->tv_usec) {
+		count = 
+			select_timed(canSleep, width,
+				readfds, writefds, exceptfds,
+				&readres, &writeres, &exceptres,
+				timeout);
+	} else {
+		count = 
+			select_once(width,
+				readfds, writefds, exceptfds,
+				&readres, &writeres, &exceptres);
+		GUSIContext::Yield(kGUSIYield);
+	}
+	<<Call [[post_select]] for all file descriptors>>
+	<<Copy internal descriptor sets to parameters>>	
+	
+	GUSIContext::Raise();
+
+	return count;
+}
+@ %def select
+
+<<Check that all specified file descriptors are valid or [[return -1]]>>=
+for (int s = 0; s < width ; ++s)
+	if (	(readfds && FD_ISSET(s,readfds))
+		||	(writefds && FD_ISSET(s,writefds))
+		||	(exceptfds && FD_ISSET(s,exceptfds))
+	)
+		if (!GUSIDescriptorTable::LookupSocket(s))
+			return -1;
+@
+
+<<Call [[pre_select]] for all file descriptors and determine [[canSleep]]>>=
+for (int s = 0; s < width ; ++s)
+	if (GUSISocket * sock = GUSIDescriptorTable::LookupSocket(s)) {
+		bool r = readfds && FD_ISSET(s,readfds);
+		bool w = writefds && FD_ISSET(s,writefds);
+		bool e = exceptfds && FD_ISSET(s,exceptfds);
+
+		if (r || w || e)
+			canSleep = sock->pre_select(r, w, e) && canSleep;
+	}
+@
+
+This loop is pretty much guaranteed to set [[errno]] to [[EBADF]], so we 
+save the actual error code and restore it (this is harmless if no error
+occurred).
+<<Call [[post_select]] for all file descriptors>>=
+int saveErrno = errno;
+for (int s = 0; s < width ; ++s)
+	if (GUSISocket * sock = GUSIDescriptorTable::LookupSocket(s)) {
+		bool r = readfds && FD_ISSET(s,readfds);
+		bool w = writefds && FD_ISSET(s,writefds);
+		bool e = exceptfds && FD_ISSET(s,exceptfds);
+
+		if (r || w || e)
+			sock->post_select(r, w, e);
+	}
+errno = saveErrno;
+@
+
+When copying back descriptor sets, we have to be careful not to copy more
+words than covered by [[width]], because Perl depends on that by allocating
+fake [[fd_sets]]. I personally think that is a bad idea, but staying 
+compatible doesn't cost too much.
+<<Copy internal descriptor sets to parameters>>=
+int nwords = ((width+31) >> 3) & ~3;
+if (readfds)
+	memcpy(readfds, &readres, nwords);
+if (writefds)
+	memcpy(writefds, &writeres, nwords);
+if (exceptfds)
+	memcpy(exceptfds, &exceptres, nwords);
+@
+
+<<Socket function wrappers>>=
+int getsockname(int s, struct sockaddr *name, socklen_t *namelen)
+{
+	<<Translate descriptor [[s]] to [[GUSISocket * sock]] or return [[-1]]>>
+
+	return sock->getsockname(name, namelen);
+}
+
+int getpeername(int s, struct sockaddr *name, socklen_t *namelen)
+{
+	<<Translate descriptor [[s]] to [[GUSISocket * sock]] or return [[-1]]>>
+
+	return sock->getpeername(name, namelen);
+}
+@ %def getsockname getpeername
+
+<<Socket function wrappers>>=
+int shutdown(int s, int how)
+{
+	<<Translate descriptor [[s]] to [[GUSISocket * sock]] or return [[-1]]>>
+
+	return sock->shutdown(how);
+}
+@ %def shutdown
+
+Bit of trivia: [[ioctl]] is actually not a POSIX function.
+<<Socket function wrappers>>=
+int ioctl(int s, unsigned long request, ...)
+{
+	va_list arglist;
+	va_start(arglist, request);
+
+	<<Translate descriptor [[s]] to [[GUSISocket * sock]] or return [[-1]]>>
+	
+	return sock->ioctl(request, arglist);
+}
+@ %def ioctl
+
+The length argument should eventually become a [[socklen_t]].
+<<Socket function wrappers>>=
+int getsockopt(int s, int level, int optname, void *optval, socklen_t * optlen)
+{
+	<<Translate descriptor [[s]] to [[GUSISocket * sock]] or return [[-1]]>>
+
+	return sock->getsockopt(level, optname, optval, optlen);
+}
+@ %def getsockopt
+
+<<Socket function wrappers>>=
+int setsockopt(int s, int level, int optname, const void *optval, socklen_t optlen)
+{
+	<<Translate descriptor [[s]] to [[GUSISocket * sock]] or return [[-1]]>>
+
+	return sock->setsockopt(level, optname, (void *) optval, optlen);
+}
+@ %def setsockopt
+
+<<Socket function wrappers>>=
+int ftruncate(int s, off_t offset)
+{
+	<<Translate descriptor [[s]] to [[GUSISocket * sock]] or return [[-1]]>>
+
+	return sock ? sock->ftruncate(offset) : -1;
+}
+@ %def ftruncate
+
+[[truncate]] is implemented in terms of [[ftruncate]].
+<<Socket function wrappers>>=
+int truncate(const char * path, off_t offset)
+{
+	int fd = open(path, O_RDWR);
+	if (fd < 0)
+		return fd;
+		
+	int res = ftruncate(fd, offset);
+	
+	close(fd);
+	
+	return res;
+}
+@ %def truncate
+
+While [[sleep]] is a POSIX function, [[usleep]] is not.
+<<Socket function wrappers>>=
+int usleep(u_int useconds)
+{	
+	if (!useconds) {
+		GUSIContext::Yield(kGUSIYield);
+		GUSIContext::Raise();
+		
+		return 0;
+	}
+	GUSITimer * timer = new GUSITimer;
+	GUSIContext::CreateCurrent()->ClearWakeups();
+	timer->MicroSleep(useconds);
+	GUSIContext::Yield(kGUSIBlock);
+	delete timer;
+	GUSIContext::Raise();
+	
+	return 0;
+}
+@ %def usleep
+
+[[symlink]] creates a symbolic link to a file.
+<<Socket function wrappers>>=
+int symlink(const char * path, const char * linkto)
+{
+	GUSIDeviceRegistry *	factory	= GUSIDeviceRegistry::Instance();
+	
+	return factory->symlink(path, linkto);
+}
+@ %def symlink
+
+[[readlink]] reads the contents of a symbolic link.
+<<Socket function wrappers>>=
+int readlink(const char * path, char * buf, int bufsize)
+{
+	GUSIDeviceRegistry *	factory	= GUSIDeviceRegistry::Instance();
+	
+	return factory->readlink(path, buf, bufsize);
+}
+@ %def readlink
+
+[[inet_aton]] and [[inet_addr]] convert an address string to an internet address.
+<<Socket function wrappers>>=
+int inet_aton(const char * addr, struct in_addr * ina)
+{
+	in_addr_t a = inet_addr(addr);
+	
+	if (a == INADDR_NONE)
+		return 0;
+	if (ina) 
+		ina->s_addr = a;
+	
+	return 1;
+}
+@ %def inet_aton
+
+<<Socket function wrappers>>=
+in_addr_t inet_addr(const char * addr)
+{
+	return GUSINetDB::Instance()->inet_addr(addr);
+}
+@ %def inet_addr
+
+<<Socket function wrappers>>=
+char *inet_ntoa(in_addr addr)
+{
+	return GUSINetDB::Instance()->inet_ntoa(addr);
+}
+@ %def inet_ntoa
+
+<<Socket function wrappers>>=
+long gethostid()
+{
+	return GUSINetDB::Instance()->gethostid();
+}
+@ %def gethostid
+
+<<Socket function wrappers>>=
+int gethostname(char *machname, int buflen)
+{
+	return GUSINetDB::Instance()->gethostname(machname, buflen);
+}
+@ %def gethostname
+
+<<Socket function wrappers>>=
+void setprotoent(int stayopen)
+{
+	GUSINetDB::Instance()->setprotoent(stayopen);
+}
+@ %def setprotoent
+
+<<Socket function wrappers>>=
+void setservent(int stayopen)
+{
+	GUSINetDB::Instance()->setservent(stayopen);
+}
+@ %def setservent
+
+<<Socket function wrappers>>=
+void endprotoent()
+{
+	GUSINetDB::Instance()->endprotoent();
+}
+@ %def endprotoent
+
+<<Socket function wrappers>>=
+void endservent()
+{
+	GUSINetDB::Instance()->endservent();
+}
+@ %def endservent
+
+<<Socket function wrappers>>=
+hostent	*gethostbyaddr(const void * addr, size_t size, int family)
+{
+	return GUSINetDB::Instance()->gethostbyaddr(addr, size, family);
+}
+@ %def gethostbyaddr
+
+<<Socket function wrappers>>=
+hostent	*gethostbyname(const char * name)
+{
+	return GUSINetDB::Instance()->gethostbyname(name);
+}
+@ %def gethostbyname
+
+<<Socket function wrappers>>=
+protoent *getprotobyname(const char * name)
+{
+	return GUSINetDB::Instance()->getprotobyname(name);
+}
+@ %def getprotobyname
+
+<<Socket function wrappers>>=
+protoent *getprotobynumber(int proto)
+{
+	return GUSINetDB::Instance()->getprotobynumber(proto);
+}
+@ %def getprotobynumber
+
+<<Socket function wrappers>>=
+protoent *getprotoent()
+{
+	return GUSINetDB::Instance()->getprotoent();
+}
+@ %def getprotoent
+
+<<Socket function wrappers>>=
+servent	*getservbyname(const char * name, const char * proto)
+{
+	return GUSINetDB::Instance()->getservbyname(name, proto);
+}
+@ %def getservbyname
+
+<<Socket function wrappers>>=
+servent	*getservbyport(int port, const char * proto)
+{
+	return GUSINetDB::Instance()->getservbyport(port, proto);
+}
+@ %def getservbyport
+
+<<Socket function wrappers>>=
+servent	*getservent()
+{
+	return GUSINetDB::Instance()->getservent();
+}
+@ %def getservent
+
+\section{Implementation of MPW wrappers}
+
+[[fgetfileinfo]] and [[fsetfileinfo]] manipulate the MacOS type/creator codes.
+<<MPW function wrappers>>=
+int fgetfileinfo(const char * path, OSType * creator, OSType * type)
+{
+	GUSIDeviceRegistry *	factory	= GUSIDeviceRegistry::Instance();
+	
+	return factory->fgetfileinfo(path, creator, type);
+}
+
+void fsetfileinfo(const char * path, OSType creator, OSType type)
+{
+	GUSIDeviceRegistry *	factory	= GUSIDeviceRegistry::Instance();
+	
+	factory->fsetfileinfo(path, creator, type);
+}
+@ %def fgetfileinfo fsetfileinfo
+
+[[faccess]] manipulates MPW properties of files.
+<<MPW function wrappers>>=
+int faccess(const char * path, unsigned * cmd, void * arg)
+{
+	GUSIDeviceRegistry *	factory	= GUSIDeviceRegistry::Instance();
+	
+	return factory->faccess(path, cmd, arg);
+}
+@ %def faccess
+

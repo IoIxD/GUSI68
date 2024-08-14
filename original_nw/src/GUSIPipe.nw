@@ -1,0 +1,342 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Project	:	GUSI				-	Grand Unified Socket Interface
+% File		:	GUSIPipe.nw			-	Pipes
+% Author	:	Matthias Neeracher
+% Language	:	C++
+% 
+% $Log: GUSIPipe.nw,v $
+% Revision 1.13  2002/09/03 05:13:56  neeri
+% Reengineered signal handling to properly handle handlers that longjmp() [GUSI Bug #564063]
+%
+% Revision 1.12  2000/05/23 07:18:03  neeri
+% Improve formatting
+%
+% Revision 1.11  2000/03/06 06:09:59  neeri
+% Reorganize Yield()
+%
+% Revision 1.10  1999/11/15 07:20:59  neeri
+% Add GUSIwithLocalSockets
+%
+% Revision 1.9  1999/08/26 05:45:07  neeri
+% Fixes for literate edition of source code
+%
+% Revision 1.8  1999/06/28 06:05:00  neeri
+% Support interrupted calls
+%
+% Revision 1.7  1999/05/29 06:26:45  neeri
+% Fixed header guards
+%
+% Revision 1.6  1999/03/17 09:05:12  neeri
+% Added GUSITimer, expanded docs
+%
+% Revision 1.5  1998/11/22 23:07:00  neeri
+% Releasing 2.0a4 in a hurry
+%
+% Revision 1.4  1998/10/25 11:57:38  neeri
+% Ready to release 2.0a3
+%
+% Revision 1.3  1998/01/25 20:53:57  neeri
+% Engine implemented, except for signals & scheduling
+%
+% Revision 1.2  1996/12/22 19:57:58  neeri
+% TCP streams work
+%
+% Revision 1.1  1996/11/24  12:52:08  neeri
+% Added GUSIPipeSockets
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\chapter{The GUSI Pipe Socket Class}
+
+Pipes and socket pairs are implemented with the [[GUSIPipeSocket]] class.
+The [[GUSIPipeFactory]] singleton creates pairs of [[GUSIPipeSockets]].
+<<GUSIPipe.h>>=
+#ifndef _GUSIPipe_
+#define _GUSIPipe_
+
+#ifdef GUSI_INTERNAL
+
+#include "GUSISocket.h"
+#include "GUSIFactory.h"
+
+<<Definition of class [[GUSIPipeFactory]]>>
+
+<<Inline member functions for class [[GUSIPipeFactory]]>>
+
+#endif /* GUSI_INTERNAL */
+
+#endif /* _GUSIPipe_ */
+@
+
+<<GUSIPipe.cp>>=
+#include "GUSIInternal.h"
+#include "GUSIPipe.h"
+#include "GUSIBasics.h"
+#include "GUSIBuffer.h"
+
+#include <errno.h>
+
+<<Definition of class [[GUSIPipeSocket]]>>
+<<Inline member functions for class [[GUSIPipeSocket]]>>
+<<Member functions for class [[GUSIPipeFactory]]>>
+<<Member functions for class [[GUSIPipeSocket]]>>
+@
+
+\section{Definition of [[GUSIPipeFactory]]}
+
+[[GUSIPipeFactory]] is a singleton subclass of [[GUSISocketFactory]].
+<<Definition of class [[GUSIPipeFactory]]>>=
+class GUSIPipeFactory : public GUSISocketFactory {
+public:
+	static GUSISocketFactory *	Instance();
+	virtual GUSISocket * 		socket(int domain, int type, int protocol);
+	virtual int socketpair(int domain, int type, int protocol, GUSISocket * s[2]);
+private:
+	GUSIPipeFactory()				{}
+	static GUSISocketFactory *	sInstance;
+};
+@ %def GUSIPipeFactory GUSIPipeFactory::socketpair GUSIPipeFactory::Instance
+
+\section{Implementation of [[GUSIPipeFactory]]}
+
+Normally, you use [[GUSIPipeFactory]] only via [[pipe]], in which case you don't
+need to initialize anything. If you want to use it via [[socketpair]], however,
+you need to call [[GUSIwithLocalSockets]] from your [[GUSISetupFactories]] routine.
+<<Member functions for class [[GUSIPipeFactory]]>>=
+extern "C" void GUSIwithLocalSockets()
+{
+	GUSISocketDomainRegistry::Instance()->AddFactory(AF_LOCAL, GUSIPipeFactory::Instance());
+}
+@
+
+<<Member functions for class [[GUSIPipeFactory]]>>=
+GUSISocketFactory * GUSIPipeFactory::sInstance = nil;
+<<Inline member functions for class [[GUSIPipeFactory]]>>=
+inline GUSISocketFactory * GUSIPipeFactory::Instance()
+{
+	if (!sInstance)
+		sInstance = new GUSIPipeFactory;
+	return sInstance;
+}
+@
+
+[[GUSIPipeFactory]] is odd in that [[socket]] is not meaningful.
+<<Member functions for class [[GUSIPipeFactory]]>>=
+GUSISocket * GUSIPipeFactory::socket(int, int, int)
+{
+	return GUSISetPosixError(EOPNOTSUPP), static_cast<GUSISocket *>(nil);
+}
+@
+
+[[socketpair]] is meaningful, however.
+<<Member functions for class [[GUSIPipeFactory]]>>=
+int GUSIPipeFactory::socketpair(int, int, int, GUSISocket * s[2])
+{
+	GUSIErrorSaver		saveError;
+	GUSIPipeSocket *	sock[2];
+	
+	if (s[0] = sock[0] = new GUSIPipeSocket)
+		if (s[1] = sock[1] = new GUSIPipeSocket) {
+			sock[0]->SetPeer(sock[1]);
+			sock[1]->SetPeer(sock[0]);
+			
+			return 0;
+		} else
+			s[0]->close();
+	
+	if (!errno)
+		return GUSISetPosixError(ENOMEM);
+	else
+		return -1;
+}
+@
+
+\section{Definition of [[GUSIPipeSocket]]}
+
+A [[GUSIPipeSocket]] is implemented with a simple [[GUSIBuffer]].
+<<Definition of class [[GUSIPipeSocket]]>>=
+class GUSIPipeSocket : public GUSISocket {
+public:
+	GUSIPipeSocket();
+	virtual ~GUSIPipeSocket();
+	<<Overridden member functions for [[GUSIPipeSocket]]>>
+	<<Peer management for [[GUSIPipeSocket]]>>
+protected:
+	<<Privatissima of [[GUSIPipeSocket]]>>
+};
+@ %def GUSIPipeSocket
+
+Each [[GUSIPipeSocket]] has a peer which is set with [[SetPeer]].
+<<Peer management for [[GUSIPipeSocket]]>>=
+void	SetPeer(GUSIPipeSocket * peer);
+@
+
+\section{Implementation of [[GUSIPipeSocket]]}
+
+<<Privatissima of [[GUSIPipeSocket]]>>=
+GUSIRingBuffer 		fBuffer;
+bool				fWriteShutdown;
+bool				fBlocking;
+GUSIPipeSocket *	fPeer;
+<<Member functions for class [[GUSIPipeSocket]]>>=
+GUSIPipeSocket::GUSIPipeSocket()
+ : fBuffer(8192), fWriteShutdown(false), fBlocking(true), fPeer(nil)
+{
+}
+@
+
+We don't have much to do with peers except setting them and waking them up.
+<<Inline member functions for class [[GUSIPipeSocket]]>>=
+inline void	GUSIPipeSocket::SetPeer(GUSIPipeSocket * peer)  { fPeer = peer; }
+<<Privatissima of [[GUSIPipeSocket]]>>=
+void WakeupPeer();
+<<Member functions for class [[GUSIPipeSocket]]>>=
+void GUSIPipeSocket::WakeupPeer()
+{
+	if (fPeer)
+		fPeer->Wakeup();
+}
+@
+
+Currently we only implement the simple calls.
+<<Overridden member functions for [[GUSIPipeSocket]]>>=
+virtual bool Supports(ConfigOption config);
+<<Member functions for class [[GUSIPipeSocket]]>>=
+bool GUSIPipeSocket::Supports(ConfigOption config)
+{
+	return config == kSimpleCalls;
+}
+@
+
+<<Overridden member functions for [[GUSIPipeSocket]]>>=
+virtual ssize_t read(const GUSIScatterer & buffer);
+<<Member functions for class [[GUSIPipeSocket]]>>=
+ssize_t GUSIPipeSocket::read(const GUSIScatterer & buffer)
+{
+	size_t	len 	= buffer.Length();
+	
+	if (!fBuffer.Valid()) {
+		<<No more data in [[GUSIPipeSocket]], check for EOF and consider waiting>>
+	}
+	fBuffer.Consume(buffer, len);
+	WakeupPeer();
+	
+	return (int) len;
+}
+@
+
+Since there is currently no data, the simplest strategy won't work and
+we need something a bit more elaborate.
+<<Privatissima of [[GUSIPipeSocket]]>>=
+bool Eof()	{  return !fPeer || fPeer->fWriteShutdown;	}
+<<No more data in [[GUSIPipeSocket]], check for EOF and consider waiting>>=
+if (Eof())
+	return 0;
+if (!fBlocking)
+	return GUSISetPosixError(EWOULDBLOCK);
+bool signal = false;
+AddContext();
+do {
+	if (signal = GUSIContext::Yield(kGUSIBlock))
+		break;
+} while (!Eof() && !fBuffer.Valid());
+RemoveContext();
+if (signal) {
+	GUSIContext::Raise();
+
+	return GUSISetPosixError(EINTR);
+}
+@
+
+<<Privatissima of [[GUSIPipeSocket]]>>=
+bool Shutdown()	{  return !fPeer || fWriteShutdown;	}
+<<Overridden member functions for [[GUSIPipeSocket]]>>=
+virtual ssize_t	write(const GUSIGatherer & buffer);
+<<Member functions for class [[GUSIPipeSocket]]>>=
+ssize_t GUSIPipeSocket::write(const GUSIGatherer & buffer)
+{
+	size_t buflen = buffer.Length();
+	size_t len;
+	size_t offset = 0;
+	
+restart:
+	if (Shutdown())
+		return GUSISetPosixError(EPIPE);
+	if (fPeer->fBuffer.Free() < buflen) {
+		<<Too much data in [[GUSIPipeSocket]], consider writing in portions>>
+	}
+	fPeer->fBuffer.Produce(buffer, buflen, offset);
+	WakeupPeer();
+	
+	return (size_t) buffer.Length();
+}
+@
+
+This could get painful. We write a portion and then wait for free buffer space.
+<<Too much data in [[GUSIPipeSocket]], consider writing in portions>>=
+if (!fBlocking && !fPeer->fBuffer.Free())
+	return offset ? (int) offset : GUSISetPosixError(EWOULDBLOCK);
+len = buflen;
+fPeer->fBuffer.Produce(buffer, len, offset);
+buflen -= len;
+WakeupPeer();
+bool signal = false;
+AddContext();
+while (!Shutdown() && !fPeer->fBuffer.Free()) {
+	if (signal = GUSIContext::Yield(kGUSIBlock))
+		break;
+}
+RemoveContext();
+if (signal) {
+	GUSIContext::Raise();
+
+	return offset ? (int) offset : GUSISetPosixError(EINTR);
+}
+goto restart;
+@
+
+Of course, we also have [[select]]. [[canWrite]] will be sort of unsatisfactory,
+since it says nothing about the size of [[write]] possible.
+<<Overridden member functions for [[GUSIPipeSocket]]>>=
+virtual bool	select(bool * canRead, bool * canWrite, bool * exception);
+<<Member functions for class [[GUSIPipeSocket]]>>=
+bool GUSIPipeSocket::select(bool * canRead, bool * canWrite, bool *)
+{
+	bool cond = false;
+	if (canRead)
+		if (*canRead = Eof() || fBuffer.Valid())
+			cond = true;
+	if (canWrite)
+		if (*canWrite = Shutdown() || fPeer->fBuffer.Free())
+			cond = true;
+		
+	return cond;
+}
+@
+
+When we're destroyed, we sever the links to our peer.
+<<Member functions for class [[GUSIPipeSocket]]>>=
+GUSIPipeSocket::~GUSIPipeSocket()
+{
+	if (fPeer)
+		fPeer->fPeer = nil;
+	WakeupPeer();
+}
+@
+
+Some similar functions are necessary for [[shutdown]].
+<<Overridden member functions for [[GUSIPipeSocket]]>>=
+virtual int	shutdown(int how);
+<<Member functions for class [[GUSIPipeSocket]]>>=
+int GUSIPipeSocket::shutdown(int how)
+{
+	if (how) 						// write
+		fWriteShutdown = true;
+	if (!(how & 1))				// read
+		if (fPeer)
+			fPeer->fWriteShutdown = true;
+	
+	return 0;	
+}
+@
+

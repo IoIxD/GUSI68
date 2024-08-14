@@ -1,0 +1,243 @@
+\documentclass[a4paper,dvips]{book}
+\usepackage{pslatex}
+\usepackage{noweb}
+\pagestyle{noweb}
+\noweboptions{webnumbering,noidentxref,externalindex,nomargintag,smallcode,longchunks}
+\newcommand{\clearemptydoublepage}{\newpage{\pagestyle{empty}\cleardoublepage}}
+\usepackage[bookmarks=true,colorlinks=true]{hyperref}
+\begin{document}
+\frontmatter
+\title{
+\huge \textsc{Liber} \Huge GVSI\\[3ex]
+\large
+Annotated Source Code to the\\[1ex]
+\Large      
+Grand Unified Socket Library\\[5ex]
+\large
+Copyright \copyright 1992--2000 Matthias Neeracher\\[2ex]
+Woven \today\\
+for GUSI Version 2.1\\
+}
+\date{}
+\maketitle
+
+\newpage
+\pagestyle{empty}
+%
+% Copyright notice
+%
+\vspace*{\fill}
+\section*{GUSI User License}
+
+My primary objective in distributing \texttt{GUSI} is to have it used as widely as 
+possible, while protecting my moral rights of authorship and limiting my 
+exposure to liability.
+
+\begin{quotation}
+\large Copyright \copyright 1992--2000 Matthias Neeracher
+\end{quotation}
+
+Permission is granted to anyone to use this software for any purpose on any
+computer system, and to redistribute it freely, subject to the following
+restrictions:
+
+\begin{itemize}
+\item The author is not responsible for the consequences of use of this software,
+  no matter how awful, even if they arise from defects in it.
+\item The origin of this software must not be misrepresented, either by explicit
+  claim or by omission.
+\item You are allowed to distributed modified copies of the software, in source
+  and binary form, provided they are marked plainly as altered versions, and 
+  are not misrepresented as being the original software.
+\end{itemize}
+
+Permission is furthermore granted to print individual copies of the documentation and 
+annotated source code of this software, provided that this copyright notice appears in
+it unchanged.
+
+While I am giving \texttt{GUSI} away for free, that does not mean that I don't like 
+getting appreciation for it. If you want to do something for me beyond your
+obligations outlined above, you can
+
+\begin{itemize}
+\item Acknowledge the use of  \texttt{GUSI} in the about box of your application and/or in
+  your documentation.
+\item \href{http://www.iis.ee.ethz.ch/~neeri/macintosh/donations.html}{Send me a CD} as described in 
+  my donations web page on
+\begin{quotation}
+  \verb|http://www.iis.ee.ethz.ch/~neeri/macintosh/donations.html|
+\end{quotation}
+\end{itemize}
+
+%
+% Table of Contents
+%
+\cleardoublepage
+\pdfbookmark{Contents}{TOC}
+\tableofcontents
+
+%
+% Introduction
+%
+\clearemptydoublepage
+\mainmatter
+\raggedright
+\setcounter{chapter}{0}%
+
+\chapter{Introduction}
+
+\texttt{GUSI} is a POSIX library for traditional MacOS. Its name, which is an
+acronym for \textit{Grand Unified Socket Interface}, hints at its original objective to 
+provide access to all the various communications facilities in MacOS through a
+common, file descriptor based, interface.
+
+The current incarnation, \texttt{GUSI} 2, represents a 
+much-needed rewrite of \texttt{GUSI} and introduces support for POSIX threads.
+
+The most recent version of \texttt{GUSI} may be obtained by anonymous ftp from 
+\begin{quotation}
+\verb|ftp://sunsite.cnlab-switch.ch/software/platforms/macos/src/mw_c|.
+\end{quotation}
+
+There is also a mailing list devoted to discussions about \texttt{GUSI}. You can join the
+list by sending a mail to 
+
+\begin{quotation}
+\verb|gusi-request@iis.ee.ethz.ch| 
+\end{quotation}
+
+whose body consists of the word \texttt{subscribe}.
+
+\section{Design Objectives}
+
+The primary objective of \texttt{GUSI} is to emulate as much as practical of the 
+UNIX 98 API for the use in MacOS programs. This is in marked contrast to other
+approaches which at first glance might seem similar:
+
+\begin{itemize}
+\item \texttt{GUSI} is \textit{not} designed for optimal performance of network communication
+	(although \texttt{GUSI} 2 should be faster than \texttt{GUSI} 1 for many purposes). The
+	design goal is to make the code as fast as possible without changing the POSIX
+	API (e.g., by exposing interrupt level code to the library user).
+
+\item \texttt{GUSI} is \textit{not} designed for maximal compliance with the POSIX API either. The
+	goal is to provide as much functionality and as faithful implementation as possible
+	while maintaining a strict library approach without writing a separate operating
+	system. 
+\end{itemize}
+
+While the original \texttt{GUSI} design had to appeal to nebulous "standards" eclectically
+drawn from POSIX and BSD APIs, the underlying APIs have now evolved into real 
+standards, so \texttt{GUSI} 2 now tries to conform to the \textit{X/Open Single Unix Specification,
+Version 2} (also known as \texttt{UNIX 98} as much as possible.
+
+\section{Literate Programs}
+
+This book contains the implementation of \texttt{GUSI 2}. The \texttt{pnoweb}\footnote{\texttt{pnoweb} is 
+a reimplementation of Norman Ramsey's \texttt{noweb} system in \texttt{perl}} literate programming system
+generates both the source code for \texttt{GUSI 2} and this book from a single source.
+
+The source code consists of interleaved prose commentary and labelled code fragments, arranged in an order 
+best suited for presenting to a human reader, rather than one dictated by a compiler. Fragments, referred
+to by their labels in angle brackets, consist of source code and references to other fragments. Several 
+fragments may have the same name; they will be concatenated in the source code. Fragments work like macros;
+a source file is created by expanding one fragment. If its definition refers to other fragments, they are 
+themselves expanded, until no fragment references remain. 
+
+\section{How to Read This Book}
+
+This book consists of 5 parts. Part~\ref{part:infra} describes the infrastructure underlying \texttt{GUSI 2}.
+Part~\ref{part:POSIX} describes the POSIX-style APIs through which \texttt{GUSI} is accessed, mapping them
+onto the interfaces defined in part~\ref{part:infra}. Part~\ref{part:domain} then describes how each communication
+domain implements those interfaces. Part~\ref{part:library} presents the code connecting GUSI to the 
+vendor specific I/O libraries and console interfaces. Finally, part~\ref{part:build} describes the build
+system used for \texttt{GUSI 2}.
+
+\section{Contacting the Author}
+
+I welcome correspondence both about the practical use of \texttt{GUSI 2} and about its presentation in this
+book (which I will freely admit still leaves a lot to be desired).
+
+\begin{verbatim}
+        Matthias Neeracher 			
+        20875 Valley Green Dr. #50			
+        Cupertino, CA 95014
+	
+        e-Mail: <neeracher@mac.com>	
+        Fax:   	+1 (408) 514-2605 ext. 0023
+\end{verbatim}
+
+%
+% Contents
+%
+\part{Infrastructure}
+\label{part:infra}
+\input{woven/GUSIDiag.nww}
+\input{woven/GUSIBasics.nww}
+\input{woven/GUSIContext.nww}
+\input{woven/GUSISpecific.nww}
+\input{woven/GUSISocket.nww}
+\input{woven/GUSIBuffer.nww}
+\input{woven/GUSIFactory.nww}
+\input{woven/GUSIDevice.nww}
+\input{woven/GUSIConfig.nww}
+\input{woven/GUSIContextQueue.nww}
+\input{woven/GUSIDCon.nww}
+\input{woven/GUSITimer.nww}
+
+\clearemptydoublepage
+\part{POSIX Wrappers}
+\label{part:POSIX}
+\input{woven/GUSIDescriptor.nww}
+\input{woven/GUSIPOSIX.nww}
+\input{woven/GUSIPThread.nww}
+\input{woven/GUSISignal.nww}
+
+\clearemptydoublepage
+\part{Domain Specific Code}
+\label{part:domain}
+\input{woven/GUSISocketMixins.nww}
+\input{woven/GUSINull.nww}
+\input{woven/GUSIPipe.nww}
+\input{woven/GUSIInet.nww}
+\input{woven/GUSINetDB.nww}
+\input{woven/GUSIMTInet.nww }
+\input{woven/GUSIMTTcp.nww}
+\input{woven/GUSIMTUdp.nww}
+\input{woven/GUSIMTNetDB.nww}
+\input{woven/GUSIOpenTransport.nww}
+\input{woven/GUSIOTInet.nww}
+\input{woven/GUSIOTNetDB.nww}
+\input{woven/GUSIFSWrappers.nww}
+\input{woven/GUSIFileSpec.nww}
+\input{woven/GUSIMacFile.nww}
+\input{woven/GUSIPPC.nww}
+
+\clearemptydoublepage
+\part{Library Specific Code}
+\label{part:library}
+\input{woven/GUSIMSL.nww}
+\input{woven/GUSIMPWStdio.nww}
+\input{woven/GUSISfio.nww}
+\input{woven/GUSIMPW.nww}
+\input{woven/GUSISIOUX.nww}
+\input{woven/GUSISIOW.nww}
+\input{woven/GUSIForeignThreads.nww}
+
+\clearemptydoublepage
+\label{part:build}
+\part{The Build System}
+\input{woven/Makefile.nww}
+%
+% Appendixes
+%
+\clearemptydoublepage
+\appendix
+\part{Appendixes}
+\clearemptydoublepage
+\chapter{Index}
+\nowebindex
+\clearemptydoublepage
+\chapter{Names of the Sections}
+\nowebchunks
+\end{document}

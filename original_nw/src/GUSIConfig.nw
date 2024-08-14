@@ -1,0 +1,641 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Project	:	GUSI				-	Grand Unified Socket Interface
+% File		:	GUSIConfig.nw		-	Configuration settings
+% Author	:	Matthias Neeracher
+% Language	:	C++
+% 
+% $Log: GUSIConfig.nw,v $
+% Revision 1.20  2002/09/03 05:13:56  neeri
+% Reengineered signal handling to properly handle handlers that longjmp() [GUSI Bug #564063]
+%
+% Revision 1.19  2002/01/02 19:52:10  neeri
+% Fix alignment, creator for config resource (MacPerl bug #464638)
+%
+% Revision 1.18  2001/01/22 04:31:11  neeri
+% Last minute changes for 2.1.5
+%
+% Revision 1.17  2001/01/17 08:40:17  neeri
+% Prevent inlining of overridable functions
+%
+% Revision 1.16  2000/05/23 06:54:39  neeri
+% Improve formatting, update to latest universal headers
+%
+% Revision 1.15  2000/03/15 07:10:29  neeri
+% Fix suffix searching code
+%
+% Revision 1.14  2000/03/06 06:24:34  neeri
+% Fix plausibility tests for A5
+%
+% Revision 1.13  1999/09/26 03:56:44  neeri
+% Sanity check for A5
+%
+% Revision 1.12  1999/08/26 05:44:59  neeri
+% Fixes for literate edition of source code
+%
+% Revision 1.11  1999/06/28 05:57:03  neeri
+% Support SIGINT generation
+%
+% Revision 1.10  1999/05/29 06:26:41  neeri
+% Fixed header guards
+%
+% Revision 1.9  1999/03/29 09:51:28  neeri
+% New configuration system with support for hardcoded configurations.
+%
+% Revision 1.8  1999/03/17 09:05:05  neeri
+% Added GUSITimer, expanded docs
+%
+% Revision 1.7  1998/10/11 16:45:10  neeri
+% Ready to release 2.0a2
+%
+% Revision 1.6  1998/08/01 21:32:01  neeri
+% About ready for 2.0a1
+%
+% Revision 1.5  1998/01/25 20:53:52  neeri
+% Engine implemented, except for signals & scheduling
+%
+% Revision 1.4  1997/11/13 21:12:10  neeri
+% Fall 1997
+%
+% Revision 1.3  1996/11/24  13:00:27  neeri
+% Fix comment leaders
+%
+% Revision 1.2  1996/11/24  12:52:06  neeri
+% Added GUSIPipeSockets
+%
+% Revision 1.1.1.1  1996/11/03  02:43:32  neeri
+% Imported into CVS
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\chapter{GUSI Configuration settings}
+
+GUSI stores its global configuration settings in the [[GUSIConfiguration]] 
+singleton class. To create the instance, GUSI calls the [[GUSISetupConfig]]
+hook.
+<<GUSIConfig.h>>=
+#ifndef _GUSIConfig_
+#define _GUSIConfig_
+
+#ifdef GUSI_SOURCE
+
+#include "GUSIFileSpec.h"
+
+#include <ConditionalMacros.h>
+
+#if PRAGMA_STRUCT_ALIGN
+#pragma options align=native
+#endif
+
+<<Definition of class [[GUSIConfiguration]]>>
+
+#if PRAGMA_STRUCT_ALIGN
+#pragma options align=reset
+#endif
+
+<<Definition of [[GUSISetupConfig]] hook>>
+<<Inline member functions for class [[GUSIConfiguration]]>>
+#endif /* GUSI_SOURCE */
+
+#endif /* _GUSIConfig_ */
+@
+
+<<GUSIConfig.cp>>=
+#include "GUSIInternal.h"
+#include "GUSIConfig.h"
+#include "GUSIDiag.h"
+#include "GUSIContext.h"
+#include "GUSIBasics.h"
+#include "GUSIFSWrappers.h"
+
+#include <signal.h>
+#include <sys/signal.h>
+
+#include <PLStringFuncs.h>
+#include <Resources.h>
+#include <Quickdraw.h>
+#include <LowMem.h>
+#include <Script.h>
+
+<<Definition of struct [[GUSIConfigRsrc]]>>
+<<Member functions for class [[GUSIConfiguration]]>>
+@
+
+\section{Definition of configuration settings}
+
+The GUSIConfiguration has a single instance with read only access, accessible
+with the static [[Instance]] member function.
+<<Definition of class [[GUSIConfiguration]]>>=
+class GUSIConfiguration {
+public:
+	enum { kNoResource = -1, kDefaultResourceID = 10240 };
+	
+	static GUSIConfiguration * 	Instance();
+	static GUSIConfiguration *	CreateInstance(short resourceID = kDefaultResourceID);
+	
+	<<Type and creator rules for newly created files>>
+	<<Automatic cursor spin>>
+	<<Automatic initialization of QuickDraw>>
+	<<Various flags>>
+protected:
+	GUSIConfiguration(short resourceID = kDefaultResourceID);
+private:
+	<<Privatissima of [[GUSIConfiguration]]>>
+};
+@ %def GUSIConfiguration
+
+To determine the file type and creator of a newly created file, we first try 
+to match one of the [[FileSuffix]] suffices.
+<<Type and creator rules for newly created files>>=
+struct FileSuffix {
+	char 	suffix[4];
+	OSType	suffType;
+	OSType	suffCreator;
+};
+short			fNumSuffices;
+FileSuffix *	fSuffices;
+
+void ConfigureSuffices(short numSuffices, FileSuffix * suffices);
+@ %def GUSIConfiguration::FileSuffix GUSIConfiguration::ConfigureSuffices
+
+If none of the suffices matches, we apply the default type and creator. These
+rules are applied with [[SetDefaultFType]].
+<<Type and creator rules for newly created files>>=
+OSType		fDefaultType;
+OSType		fDefaultCreator;
+
+void ConfigureDefaultTypeCreator(OSType defaultType, OSType defaultCreator);
+void SetDefaultFType(const GUSIFileSpec & name) const;
+@ %def GUSIConfiguration::SetDefaultFType
+
+To simplify Macintosh friendly ports of simple, I/O bound programs it is 
+possible to specify automatic yielding on read() and write() calls. 
+[[AutoSpin]] will spin a cursor and/or yield the CPU if desired.
+<<Automatic cursor spin>>=
+bool fAutoSpin;
+
+void ConfigureAutoSpin(bool autoSpin);
+void AutoSpin() const;
+@ %def 	GUSIConfiguration::AutoSpin
+
+GUSI applications can crash hard if QuickDraw is not initialized. Therefore, we
+offer to initialize it automatically with the [[fAutoInitGraf]] feature.
+<<Automatic initialization of QuickDraw>>=
+bool fAutoInitGraf;
+
+void ConfigureAutoInitGraf(bool autoInitGraf);
+void AutoInitGraf();
+@ %def GUSIConfiguration::AutoInitGraf
+
+Due to the organization of a UNIX filesystem, it is fairly easy to find
+out how many subdirectories a given directory has, since the [[nlink]] field of 
+its inode will automatically contain the number of subdirectories[[+2]]. Therefore,
+some UNIX derived code depends on this behaviour. When [[fAccurateStat]] is set, 
+GUSI emulates this behaviour, but be warned that this makes [[stat]] on
+directories a much more expensive operation. If [[fAccurateStat]] is not set,
+stat() gives the total number of entries in the directory[[+2]] as a conservative 
+estimate.
+<<Various flags>>=
+bool fAccurateStat;
+
+void ConfigureAccurateStat(bool accurateState);
+@
+
+The [[fSigPipe]] feature causes a signal [[SIGPIPE]] to be raised if an attempt
+is made to write to a broken pipe.
+<<Various flags>>=
+bool		fSigPipe;
+
+void ConfigureSigPipe(bool sigPipe);
+void BrokenPipe();
+@
+
+The [[fSigInt]] feature causes a signal [[SIGINT]] to be raised if the user presses
+command-period.
+<<Various flags>>=
+bool		fSigInt;
+
+void ConfigureSigInt(bool sigInt);
+void CheckInterrupt();
+@
+
+If [[fSharedOpen]] is set, open() opens files with shared read/write permission.
+<<Various flags>>=
+bool		fSharedOpen;
+
+void ConfigureSharedOpen(bool sharedOpen);
+@
+
+If [[fHandleAppleEvents]] is set, GUSI automatically handles AppleEvents in its 
+event handling routine.
+<<Various flags>>=
+bool		fHandleAppleEvents;
+
+void ConfigureHandleAppleEvents(bool handleAppleEvents);
+@
+
+To create the sole instance of [[GUSIConfiguration]], we call [[GUSISetupConfig]]
+which has to call [[GUSIConfiguration::CreateInstance]].
+<<Definition of [[GUSISetupConfig]] hook>>=
+#ifdef __MRC__
+#pragma noinline_func GUSISetupConfig
+#endif
+
+extern "C" void GUSISetupConfig();
+@ %def GUSISetupConfig
+
+\section{Implementation of configuration settings}
+
+The sole instance of [[GUSIConfiguration]] is created on demand.
+<<Privatissima of [[GUSIConfiguration]]>>=
+static GUSIConfiguration * sInstance;
+@
+<<Member functions for class [[GUSIConfiguration]]>>=
+GUSIConfiguration * GUSIConfiguration::sInstance = nil;
+@
+<<Inline member functions for class [[GUSIConfiguration]]>>=
+inline GUSIConfiguration * GUSIConfiguration::Instance()
+{
+	if (!sInstance)
+		GUSISetupConfig();
+	if (!sInstance)
+		sInstance = new GUSIConfiguration();
+	
+	return sInstance;
+}
+
+inline GUSIConfiguration * GUSIConfiguration::CreateInstance(short resourceID)
+{
+	if (!sInstance)
+		sInstance = new GUSIConfiguration(resourceID);
+	
+	return sInstance;
+}
+@
+
+The default implementation of [[GUSISetupConfig]] simply creates the instance.
+Feel free to override it.
+<<Member functions for class [[GUSIConfiguration]]>>=
+//
+// Prevent inlining to allow override
+//
+#ifdef __MWERKS__
+#pragma dont_inline on
+#endif
+
+void GUSISetupConfig()
+{
+	GUSIConfiguration::CreateInstance();
+}
+
+#ifdef __MWERKS__
+#pragma dont_inline reset
+#endif
+@
+
+The configuration resource format of GUSI is quite old by now and has grown 
+over the years. We have to be careful to keep it compatible across versions.
+<<Definition of struct [[GUSIConfigRsrc]]>>=
+#if PRAGMA_STRUCT_ALIGN
+	#pragma options align=mac68k
+#endif
+struct GUSIConfigRsrc {
+	OSType			fDefaultType;
+	OSType			fDefaultCreator;
+	
+	bool			fAutoSpin;
+	unsigned char	fFlags;
+	
+	OSType			fVersion;
+	
+	short							fNumSuffices;
+	GUSIConfiguration::FileSuffix 	fSuffices[1];
+};
+#if PRAGMA_STRUCT_ALIGN
+	#pragma options align=reset
+#endif
+@ %def GUSIConfigRsrc
+
+The [[GUSIConfiguration]] constructor initializes all fields to reasonable defaults
+and then looks for a configuration resources, if one is specified.
+<<Member functions for class [[GUSIConfiguration]]>>=
+GUSIConfiguration::GUSIConfiguration(short resourceID)
+{
+	<<Set defaults for [[GUSIConfiguration]] members>>
+	
+	if (resourceID == kNoResource)
+		return;
+	
+	GUSIConfigRsrc ** 	rsrc = 
+		reinterpret_cast<GUSIConfigRsrc **>(Get1Resource('GU I', resourceID));
+	long				size = GetHandleSize(Handle(rsrc));
+	
+	if (!rsrc || !size)
+		return;
+		
+	OSType version = '0102';
+	if (size >= 14)
+		version = rsrc[0]->fVersion;
+		
+	<<Read configuration resource into [[GUSIConfiguration]]>>
+}
+@
+
+We show all fields with their three initialization methods tracks: 
+
+\begin{itemize}
+\item How they are initialized.
+\item How they are read from the configuration resource.
+\item How they are set via a member function.
+\end{itemize}
+
+After that, we show how they are used.
+
+[[ConfigureDefaultTypeCreator]] sets the default type and creator.
+<<Set defaults for [[GUSIConfiguration]] members>>=
+fDefaultType	=	'TEXT';
+fDefaultCreator	=	'MPS ';
+<<Read configuration resource into [[GUSIConfiguration]]>>=
+if (size >= 4 && rsrc[0]->fDefaultType)
+	fDefaultType = rsrc[0]->fDefaultType;
+if (size >= 8 && rsrc[0]->fDefaultCreator)
+	fDefaultCreator = rsrc[0]->fDefaultCreator;
+<<Inline member functions for class [[GUSIConfiguration]]>>=
+inline void GUSIConfiguration::ConfigureDefaultTypeCreator(OSType defaultType, OSType defaultCreator)
+{
+	fDefaultType	= defaultType;
+	fDefaultCreator	= defaultCreator;
+}
+@
+
+[[ConfigureSuffices]] sets up the suffix table.
+<<Privatissima of [[GUSIConfiguration]]>>=
+bool fWeOwnSuffices;
+<<Set defaults for [[GUSIConfiguration]] members>>=
+fNumSuffices 	= 	0;
+fSuffices   	= 	nil;
+fWeOwnSuffices	=	false;
+<<Read configuration resource into [[GUSIConfiguration]]>>=
+if (version >= '0120' && size >= 16)
+	fNumSuffices = rsrc[0]->fNumSuffices;
+if (fNumSuffices && (fSuffices = new FileSuffix[fNumSuffices])) {
+	fWeOwnSuffices = true;
+	memcpy(fSuffices, rsrc[0]->fSuffices, fNumSuffices*sizeof(FileSuffix));
+	for (int i=0; i<fNumSuffices; i++)
+		for (int j=0; j<4; j++)
+			if (fSuffices[i].suffix[j] == ' ')
+				fSuffices[i].suffix[j] = 0;
+}
+<<Member functions for class [[GUSIConfiguration]]>>=
+void GUSIConfiguration::ConfigureSuffices(short numSuffices, FileSuffix * suffices)
+{
+	if (fWeOwnSuffices) {
+		delete fSuffices;
+		fWeOwnSuffices = false;
+	}
+	fNumSuffices = numSuffices;
+	fSuffices = suffices;
+}
+@
+
+[[SetDefaultFType]] assigns the preferred file type to a file.
+<<Member functions for class [[GUSIConfiguration]]>>=
+void GUSIConfiguration::SetDefaultFType(const GUSIFileSpec & name) const
+{
+	FInfo	info;	
+
+	if (GUSIFSGetFInfo(&name, &info))
+		return;
+	info.fdType 	=	fDefaultType;
+	info.fdCreator	=	fDefaultCreator;
+
+	<<Try matching file suffix rules>>
+determined:	
+	GUSIFSSetFInfo(&name, &info);
+}
+<<Try matching file suffix rules>>=
+Ptr dot = PLstrrchr(name->name, '.');
+if (dot && (name->name[0] - (dot-Ptr(name->name))) <= 4) {
+	char searchsuffix[5];
+	memset(searchsuffix, 0, 5);
+	strncpy(searchsuffix, dot+1, name->name[0] - (dot-Ptr(name->name)));
+	
+	for (int i = 0; i<fNumSuffices; i++)
+		if (!strncmp(fSuffices[i].suffix, searchsuffix, 4)) {
+			info.fdType 	=	fSuffices[i].suffType;
+			info.fdCreator	=	fSuffices[i].suffCreator;
+			
+			goto determined;
+		}
+}
+@
+
+[[ConfigureAutoSpin]] sets the autospin flag, which is enabled by default.
+<<Set defaults for [[GUSIConfiguration]] members>>=
+fAutoSpin = true;
+<<Read configuration resource into [[GUSIConfiguration]]>>=
+if (size >= 9)
+	fAutoSpin = (rsrc[0]->fAutoSpin != 0);
+<<Inline member functions for class [[GUSIConfiguration]]>>=
+inline void GUSIConfiguration::ConfigureAutoSpin(bool autoSpin)
+{
+	fAutoSpin = autoSpin;
+}
+@
+
+[[AutoSpin]] tests the flag inline, but performs the actual spinning out of
+line.
+<<Privatissima of [[GUSIConfiguration]]>>=
+void DoAutoSpin() const;
+<<Inline member functions for class [[GUSIConfiguration]]>>=
+inline void GUSIConfiguration::AutoSpin() const
+{
+	if (fAutoSpin)
+		DoAutoSpin();
+}
+<<Member functions for class [[GUSIConfiguration]]>>=
+void GUSIConfiguration::DoAutoSpin() const
+{
+	GUSIContext::Yield(kGUSIYield);
+	GUSIContext::Raise();
+}
+@
+
+[[ConfigureAutoInitGraf]] controls automatic initialization of QuickDraw.
+<<Set defaults for [[GUSIConfiguration]] members>>=
+fAutoInitGraf		= true;
+<<Read configuration resource into [[GUSIConfiguration]]>>=
+fAutoInitGraf		= version <  '0174' || (rsrc[0]->fFlags & 0x04) == 0;
+<<Inline member functions for class [[GUSIConfiguration]]>>=
+inline void GUSIConfiguration::ConfigureAutoInitGraf(bool autoInitGraf)
+{
+	fAutoInitGraf 	= autoInitGraf;
+}
+@
+
+[[AutoInitGraf]] works rather similarly to [[AutoSpin]].
+<<Privatissima of [[GUSIConfiguration]]>>=
+void DoAutoInitGraf();
+<<Inline member functions for class [[GUSIConfiguration]]>>=
+inline void GUSIConfiguration::AutoInitGraf()
+{
+	if (fAutoInitGraf)
+		DoAutoInitGraf();
+}
+@
+
+To make sure that A5 doesn't point into an overly wild location, we perform some sanity
+checks before getting to the point.
+<<Member functions for class [[GUSIConfiguration]]>>=
+void GUSIConfiguration::DoAutoInitGraf()
+{
+	Ptr curA5 = LMGetCurrentA5();
+	
+	if (!(reinterpret_cast<long>(curA5) & 1) 
+	 && curA5 > reinterpret_cast<Ptr>(ApplicationZone()) 
+	 && curA5 < LMGetBufPtr()
+	)
+		if (*reinterpret_cast<GrafPtr **>(curA5) != &qd.thePort)
+			InitGraf(&qd.thePort);
+	fAutoInitGraf	=	false;	
+}
+@
+
+
+[[ConfigureSigPipe]] controls whether [[SIGPIPE]] signals are generated.
+<<Set defaults for [[GUSIConfiguration]] members>>=
+fSigPipe		= false;
+<<Read configuration resource into [[GUSIConfiguration]]>>=
+fSigPipe		= version >= '0174' && (rsrc[0]->fFlags & 0x01) != 0;
+<<Inline member functions for class [[GUSIConfiguration]]>>=
+inline void GUSIConfiguration::ConfigureSigPipe(bool sigPipe)
+{
+	fSigPipe 	= sigPipe;
+}
+@
+
+[[BrokenPipe]] raises a [[SIGPIPE]] signal if desired.
+<<Member functions for class [[GUSIConfiguration]]>>=
+void GUSIConfiguration::BrokenPipe()
+{
+	if (fSigPipe)
+		raise(SIGPIPE);
+}
+@
+
+[[ConfigureSigInt] controls whether [[SIGINT]] signals are generated.
+<<Set defaults for [[GUSIConfiguration]] members>>=
+fSigInt		= true;
+<<Read configuration resource into [[GUSIConfiguration]]>>=
+fSigInt		= true;
+<<Inline member functions for class [[GUSIConfiguration]]>>=
+inline void GUSIConfiguration::ConfigureSigInt(bool sigInt)
+{
+	fSigInt 	= sigInt;
+}
+@
+
+[[CheckInterrupt]] raises a [[SIGINT]] signal if desired.
+<<Privatissima of [[GUSIConfiguration]]>>=
+bool CmdPeriod(const EventRecord * event);
+<<Member functions for class [[GUSIConfiguration]]>>=
+void GUSIConfiguration::CheckInterrupt()
+{
+	if (fSigInt) {
+		EvQElPtr		eventQ;
+
+		for (eventQ = (EvQElPtr) LMGetEventQueue()->qHead; eventQ; )
+			if (CmdPeriod(reinterpret_cast<EventRecord *>(&eventQ->evtQWhat))) {
+				raise(SIGINT);
+				FlushEvents(-1, 0);
+				break; 
+			} else
+				eventQ = (EvQElPtr)eventQ->qLink;
+	}
+}
+@
+
+Checking for the Command-Period key combination is rather complex. Our technique is copied
+straight from tech note 263.
+<<Member functions for class [[GUSIConfiguration]]>>=
+bool GUSIConfiguration::CmdPeriod(const EventRecord * event)
+{
+	<<Constants for [[CmdPeriod]]>>
+	
+	if ((event->what == keyDown) || (event->what == autoKey)) {
+		// see if the command key is down.  If it is, find out the ASCII
+		// equivalent for the accompanying key.
+
+		if (event->modifiers & cmdKey ) {
+			<<Find ASCII equivalent of virtual key>>
+			
+			if ((keyInfo & kMaskASCII2) == '.' || (keyInfo & kMaskASCII1) == ('.' << 16))
+				return true;
+		}  // end the command key is down
+	}  // end key down event	
+	
+	return false;
+}
+<<Constants for [[CmdPeriod]]>>=
+const long kMaskModifiers 	= 0xFE00;  		// we need the modifiers without the
+                                   			// command key for KeyTrans
+const long kMaskVirtualKey 	= 0x0000FF00; 	// get virtual key from event message
+                                   			// for KeyTrans
+const long kUpKeyMask      	= 0x0080;
+const long kShiftWord      	= 8;          	// we shift the virtual key to mask it
+                                   			// into the keyCode for KeyTrans
+const long kMaskASCII1     	= 0x00FF0000; 	// get the key out of the ASCII1 byte
+const long kMaskASCII2     	= 0x000000FF; 	// get the key out of the ASCII2 byte
+<<Find ASCII equivalent of virtual key>>=
+short 	virtualKey 	= (event->message & kMaskVirtualKey) >> kShiftWord;
+short 	keyCode    	= (event->modifiers & kMaskModifiers) | virtualKey;
+UInt32	state      	= 0;
+Handle	hKCHR 		= nil; 
+Ptr		KCHRPtr 	= reinterpret_cast<Ptr>(GetScriptManagerVariable(smKCHRCache));
+if (!KCHRPtr) {
+	short script 	= GetScriptManagerVariable(smKeyScript);
+	short kcID 		= GetScriptVariable(script, smScriptKeys);
+	hKCHR   		= GetResource('KCHR', kcID);
+	KCHRPtr 		= *hKCHR;
+}
+short	keyInfo;
+if (KCHRPtr) {
+	keyInfo = KeyTranslate(KCHRPtr, keyCode, &state);
+	if (hKCHR)
+		ReleaseResource(hKCHR);
+} else
+	keyInfo = event->message;
+@
+
+[[fAccurateStat]] and [[fSharedOpen]] are tested from client code.
+<<Set defaults for [[GUSIConfiguration]] members>>=
+fAccurateStat		= false;
+fSharedOpen			= false;
+<<Read configuration resource into [[GUSIConfiguration]]>>=
+fAccurateStat		= (rsrc[0]->fFlags & 0x80) != 0;
+fSharedOpen			= version >= '0174' && (rsrc[0]->fFlags & 0x02) != 0;
+<<Inline member functions for class [[GUSIConfiguration]]>>=
+inline void GUSIConfiguration::ConfigureAccurateStat(bool accurateStat)
+{
+	fAccurateStat 	= accurateStat;
+}
+inline void GUSIConfiguration::ConfigureSharedOpen(bool sharedOpen)
+{
+	fSharedOpen 	= sharedOpen;
+}
+@
+
+[[ConfigureHandleAppleEvents]] is somewhat unusual in that it calls out into
+client code instead of the other way around.
+<<Set defaults for [[GUSIConfiguration]] members>>=
+fHandleAppleEvents 	= true;
+<<Read configuration resource into [[GUSIConfiguration]]>>=
+ConfigureHandleAppleEvents(version < '0181' || (rsrc[0]->fFlags & 0x08) == 0);
+<<Member functions for class [[GUSIConfiguration]]>>=
+void GUSIConfiguration::ConfigureHandleAppleEvents(bool handleAppleEvents)
+{
+	if (fHandleAppleEvents != handleAppleEvents) {
+		fHandleAppleEvents = handleAppleEvents;
+		GUSISetHook(GUSI_EventHook+kHighLevelEvent, (GUSIHook) (fHandleAppleEvents ? 0 : -1));
+	}
+}
+@

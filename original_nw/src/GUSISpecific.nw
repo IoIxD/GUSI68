@@ -1,0 +1,312 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Project	:	GUSI				-	Grand Unified Socket Interface
+% File		:	GUSISpecific.nw		-	Thread specific variables
+% Author	:	Matthias Neeracher
+% Language	:	C++
+% 
+% $Log: GUSISpecific.nw,v $
+% Revision 1.9  2000/10/16 04:11:21  neeri
+% Plug memory leak
+%
+% Revision 1.8  2000/03/15 07:22:07  neeri
+% Enforce alignment choices
+%
+% Revision 1.7  1999/08/26 05:45:10  neeri
+% Fixes for literate edition of source code
+%
+% Revision 1.6  1999/05/30 03:09:31  neeri
+% Added support for MPW compilers
+%
+% Revision 1.5  1999/04/29 04:58:20  neeri
+% Fix key destruction bug
+%
+% Revision 1.4  1999/03/17 09:05:13  neeri
+% Added GUSITimer, expanded docs
+%
+% Revision 1.3  1998/10/11 16:45:25  neeri
+% Ready to release 2.0a2
+%
+% Revision 1.2  1998/08/01 21:32:11  neeri
+% About ready for 2.0a1
+%
+% Revision 1.1  1998/01/25 21:02:52  neeri
+% Engine implemented, except for signals & scheduling
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\chapter{Thread Specific Variables}
+
+It is often useful to have variables which maintain a different value 
+for each process. The [[GUSISpecific]] class implements such a mechanism
+in a way that is easily mappable to pthreads.
+
+<<GUSISpecific.h>>=
+#ifndef _GUSISpecific_
+#define _GUSISpecific_
+
+#ifndef GUSI_SOURCE
+
+typedef struct GUSISpecific	GUSISpecific;
+
+#else
+
+#include <Types.h>
+#include <ConditionalMacros.h>
+
+#if PRAGMA_STRUCT_ALIGN
+#pragma options align=native
+#endif
+
+<<Definition of class [[GUSISpecific]]>>
+<<Definition of class [[GUSISpecificTable]]>>
+<<Definition of template [[GUSISpecificData]]>>
+
+#if PRAGMA_STRUCT_ALIGN
+#pragma options align=reset
+#endif
+
+<<Inline member functions for class [[GUSISpecific]]>>
+<<Inline member functions for class [[GUSISpecificTable]]>>
+
+#endif /* GUSI_SOURCE */
+
+#endif /* _GUSISpecific_ */
+@
+
+<<GUSISpecific.cp>>=
+#include "GUSIInternal.h"
+#include "GUSISpecific.h"
+#include "GUSIContext.h"
+#include "GUSIDiag.h"
+
+#include <utility>
+
+GUSI_USING_STD_NAMESPACE
+
+#include <TextUtils.h>
+
+<<Member functions for class [[GUSISpecific]]>>
+<<Member functions for class [[GUSISpecificTable]]>>
+@
+
+
+\section{Definition of Thread Specific Variables}
+
+A [[GUSISpecific]]Êinstance contains a variable ID and a per-process 
+destructor.
+<<Definition of class [[GUSISpecific]]>>=
+extern "C"  {
+	typedef void (*GUSISpecificDestructor)(void *);
+}
+
+class GUSISpecific {
+	friend class GUSISpecificTable;
+public:
+	GUSISpecific(GUSISpecificDestructor destructor = nil);
+	~GUSISpecific();
+	
+	void 					Destruct(void * data);
+private:
+	GUSISpecificDestructor	fDestructor;
+	unsigned				fID;
+	static unsigned			sNextID;
+};
+@ %def GUSISpecific
+
+A [[GUSIContext]] contains a [[GUSISpecificTable]] storing the values of all
+thread specific variables defined for this thread. 
+<<Definition of class [[GUSISpecificTable]]>>=
+class GUSISpecificTable {
+	friend class GUSISpecific;
+public:
+	GUSISpecificTable();
+	~GUSISpecificTable();
+	void * 	GetSpecific(const GUSISpecific * key) const;
+	void	SetSpecific(const GUSISpecific * key, void * value);
+	void 	DeleteSpecific(const GUSISpecific * key);
+private:
+	static void Register(GUSISpecific * key);
+	static void Destruct(GUSISpecific * key);
+	
+	<<Privatissima of [[GUSISpecificTable]]>>
+};
+@ %def GUSISpecificTable
+
+To simplify having a particular variable assume a different instance in every
+thread, we define the [[GUSISpecificData]] template.
+<<Definition of template [[GUSISpecificData]]>>=
+template <class T, GUSISpecificDestructor D> 
+class GUSISpecificData {
+public:
+	GUSISpecificData() : fKey(D)    		{										}
+	T & operator*() 						{ return *get(); 						}
+	T * operator->()						{ return get();  						}
+	
+	const GUSISpecific *	Key() const 	{ return &fKey; 						}
+	T * get(GUSISpecificTable * table);
+	T * get()								{ return get(GUSIContext::Current()); 	}
+protected:
+	GUSISpecific	fKey;
+};
+
+template <class T, GUSISpecificDestructor D> 
+	T * GUSISpecificData<T,D>::get(GUSISpecificTable * table)
+{
+	void *				data  = table->GetSpecific(&fKey);
+	
+	if (!data)
+		table->SetSpecific(&fKey, data = new T);
+	
+	return static_cast<T *>(data);
+}
+@ %def GUSISpecificData
+
+\section{Implementation of Thread Specific Variables}
+
+[[GUSISpecific]] is trivial to implement, so we keep all of the members inline.
+<<Member functions for class [[GUSISpecific]]>>=
+unsigned GUSISpecific::sNextID = 0;
+@
+
+<<Inline member functions for class [[GUSISpecific]]>>=
+inline GUSISpecific::GUSISpecific(GUSISpecificDestructor destructor)
+	: fDestructor(destructor), fID(sNextID++)
+{
+	GUSISpecificTable::Register(this);
+}
+
+inline GUSISpecific::~GUSISpecific()
+{
+	GUSISpecificTable::Destruct(this);
+}
+
+inline void GUSISpecific::Destruct(void * data)
+{
+	if (fDestructor)
+		fDestructor(data);
+}
+@
+
+We store a [[GUSISpecificTable]] as a contiguous range of IDs.
+<<Privatissima of [[GUSISpecificTable]]>>=
+void ***				fValues;
+unsigned				fAlloc;
+
+bool					Valid(const GUSISpecific * key) const;
+@
+
+<<Inline member functions for class [[GUSISpecificTable]]>>=
+inline bool GUSISpecificTable::Valid(const GUSISpecific * key) const
+{
+	return key && key->fID < fAlloc;
+}
+@
+
+<<Inline member functions for class [[GUSISpecificTable]]>>=
+inline GUSISpecificTable::GUSISpecificTable()
+	: fValues(nil), fAlloc(0)
+{	
+}
+@
+
+<<Member functions for class [[GUSISpecificTable]]>>=
+GUSISpecificTable::~GUSISpecificTable()
+{
+	void * data;
+	
+	if (fValues) {
+		for (unsigned id = 0; id < fAlloc; ++id) 
+			while ((data = fValues[0][id]) && sKeys[0][id]) {
+				fValues[0][id] = 0;
+				sKeys[0][id]->Destruct(data);
+			}
+		DisposeHandle((Handle)fValues);
+	}
+}
+@
+
+<<Inline member functions for class [[GUSISpecificTable]]>>=
+inline void * GUSISpecificTable::GetSpecific(const GUSISpecific * key) const
+{
+	if (Valid(key))
+		return fValues[0][key->fID];
+	else
+		return nil;
+}
+@
+
+<<Member functions for class [[GUSISpecificTable]]>>=
+void GUSISpecificTable::SetSpecific(const GUSISpecific * key, void * value)
+{
+	if (!key)
+		return;
+	
+	if (key->fID >= fAlloc) {
+		unsigned newAlloc 	= (key->fID & ~7) + 8;
+		size_t   allocSize	= newAlloc*sizeof(void *);
+	
+		if (!fValues)
+			fValues  = (void ***)NewHandle(allocSize);
+		else
+			SetHandleSize((Handle) fValues, allocSize);			
+
+		while (fAlloc < newAlloc)
+			fValues[0][fAlloc++] = nil;
+	}
+	fValues[0][key->fID] = value;
+}
+@
+
+<<Member functions for class [[GUSISpecificTable]]>>=
+void GUSISpecificTable::DeleteSpecific(const GUSISpecific * key)
+{
+	if (fValues && Valid(key)) {
+		void * data = fValues[0][key->fID];
+		
+		if (data && sKeys[0][key->fID]) {
+			fValues[0][key->fID] = nil;
+			sKeys[0][key->fID]->Destruct(data);
+		}
+	}
+}
+@
+
+All keys are registered in a global table.
+<<Privatissima of [[GUSISpecificTable]]>>=
+static GUSISpecific ***	sKeys;
+static unsigned			sKeyAlloc;
+@
+
+<<Member functions for class [[GUSISpecificTable]]>>=
+GUSISpecific ***	GUSISpecificTable::sKeys 		= nil;
+unsigned			GUSISpecificTable::sKeyAlloc 	= 0;
+@
+
+<<Member functions for class [[GUSISpecificTable]]>>=
+void GUSISpecificTable::Register(GUSISpecific * key)
+{
+	if (key->fID >= sKeyAlloc) {
+		unsigned newAlloc 	= (key->fID & ~7) + 8;
+		size_t   allocSize	= newAlloc*sizeof(GUSISpecific *);
+		
+		if (!sKeys)
+			sKeys = (GUSISpecific ***) NewHandle(allocSize);
+		else
+			SetHandleSize((Handle)sKeys, allocSize);
+			
+		while (sKeyAlloc < newAlloc)
+			sKeys[0][sKeyAlloc++] = nil;
+	}
+	sKeys[0][key->fID] = key;
+}
+@
+
+Note that this doesn't call any destructors.
+<<Member functions for class [[GUSISpecificTable]]>>=
+void GUSISpecificTable::Destruct(GUSISpecific * key)
+{
+	sKeys[0][key->fID] = nil;
+}
+@
+
+

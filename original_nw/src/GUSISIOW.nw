@@ -1,0 +1,108 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Project	:	GUSI				-	Grand Unified Socket Interface
+% File		:	GUSISIOW.nw			-	SIOW Interface
+% Author	:	Matthias Neeracher
+% Language	:	C++
+% 
+% $Log: GUSISIOW.nw,v $
+% Revision 1.2  1999/08/26 05:45:08  neeri
+% Fixes for literate edition of source code
+%
+% Revision 1.1  1999/07/19 06:17:08  neeri
+% Add SIOW support
+%
+
+\chapter{SIOW Support}
+
+SIOW support is based on MPW support, adding a few event hooks so update and activate events
+get handled during blocking calls. SIOW support is installed implecitly through [[GUSIDefaultSetupConsole]].
+<<GUSISIOW.h>>=
+#ifndef _GUSISIOW_
+#define _GUSISIOW_
+
+#endif /* _GUSISIOW_ */
+@
+
+<<GUSISIOW.cp>>=
+#include "GUSIInternal.h"
+#include "GUSISIOW.h"
+#include "GUSIBasics.h"
+#include "GUSIDescriptor.h"
+
+#include <Events.h>
+#include <Windows.h>
+
+extern "C" {
+<<Prototypes for internal SIOW functions>>
+}
+
+<<Event handlers for SIOW>>
+<<SIOW implementation of [[GUSIDefaultSetupConsole]]>>
+@
+
+The activate and suspend/resume handlers are very similar and both ultimately call
+[[_DoActivate]]. For reasons that I don't quite remember anymore, we are a bit more
+conservative about treating the current port than SIOW itself is.
+<<Prototypes for internal SIOW functions>>=
+void _DoActivate(WindowPtr win, int activate);
+<<Event handlers for SIOW>>=
+static void GUSIDoActivate(WindowPtr win, bool activate)
+{
+	GrafPtr port;
+	GetPort(&port);
+	if (win)
+		SetPort(win);
+	_DoActivate(win, activate);
+	SetPort(port);
+}
+
+static void GUSISIOWActivate(EventRecord * ev)
+{
+	GUSIDoActivate(reinterpret_cast<WindowPtr>(ev->message), ev->modifiers & activeFlag);
+}
+@ %def GUSIDoActivate GUSISIOWActivate
+
+As a slight extra complication, not all OS events are suspend/resume events.
+<<Prototypes for internal SIOW functions>>=
+void _DoIdle();
+<<Event handlers for SIOW>>=
+static void GUSISIOWSusRes(EventRecord * ev)
+{	
+	switch ((ev->message >> 24) & 0xFF) {
+	case suspendResumeMessage:
+		GUSIDoActivate(FrontWindow(), ev->message & resumeFlag);
+		break;
+	case mouseMovedMessage:
+		_DoIdle();
+		break;
+	}
+}
+@ %def GUSISIOWSusRes
+
+The update handler similarly calls [[_DoUpdate]].
+<<Prototypes for internal SIOW functions>>=
+void _DoUpdate(WindowPtr win);
+<<Event handlers for SIOW>>=
+static void GUSISIOWUpdate(EventRecord * ev)
+{
+	_DoUpdate((WindowPtr) ev->message);
+}
+@
+
+This is one of the rare occasions where overriding [[GUSIDefaultConsole]] makes sense. This way, we can 
+reuse the MPW version of [[GUSISetupConsoleDescriptors]].
+<<SIOW implementation of [[GUSIDefaultSetupConsole]]>>=
+static void GUSISetupSIOW()
+{
+	GUSISetHook(GUSI_EventHook+updateEvt,	(GUSIHook)GUSISIOWUpdate);
+	GUSISetHook(GUSI_EventHook+activateEvt,	(GUSIHook)GUSISIOWActivate);
+	GUSISetHook(GUSI_EventHook+osEvt,		(GUSIHook)GUSISIOWSusRes);
+}
+
+void GUSIDefaultSetupConsole()
+{
+	GUSISetupConsoleDescriptors();
+	GUSISetupSIOW();
+	GUSISetupConsoleStdio();
+}
+@

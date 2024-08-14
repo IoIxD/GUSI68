@@ -1,0 +1,815 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Project	:	GUSI				-	Grand Unified Socket Interface
+% File		:	GUSISignal.nw		-	Signal engine
+% Author	:	Matthias Neeracher
+% Language	:	C++
+% 
+% $Log: GUSISignal.nw,v $
+% Revision 1.11  2002/11/19 07:04:39  neeri
+% Properly handle interval in ualarm
+%
+% Revision 1.10  2002/09/05 03:00:27  neeri
+% Don't execute SIG_DFL as a procedure pointer
+%
+% Revision 1.9  2002/09/03 05:13:56  neeri
+% Reengineered signal handling to properly handle handlers that longjmp() [GUSI Bug #564063]
+%
+% Revision 1.8  2002/01/02 19:56:06  neeri
+% Disable blocking in signal handler until siglongjmp() is implemented, if ever (MacPerl bug #470321)
+%
+% Revision 1.7  2000/10/16 04:08:51  neeri
+% Add binary compatibility for CW SIGINT
+%
+% Revision 1.6  2000/05/23 07:18:03  neeri
+% Improve formatting
+%
+% Revision 1.5  2000/03/15 07:22:07  neeri
+% Enforce alignment choices
+%
+% Revision 1.4  1999/12/13 03:07:25  neeri
+% Releasing 2.0.2
+%
+% Revision 1.3  1999/11/15 07:20:18  neeri
+% Safe context setup
+%
+% Revision 1.2  1999/08/26 05:45:09  neeri
+% Fixes for literate edition of source code
+%
+% Revision 1.1  1999/06/30 07:42:07  neeri
+% Getting ready to release 2.0b3
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\chapter{Signal support}
+
+We support signals in the half assed way characteristic for GUSI's approach to 
+asynchronous issues: Delivery is very much synchronous, basically within [[Yield]]
+calls. Signal handling behavior is encapsulated in the classes [[GUSISigContext]] and
+[[GUSISigProcess]] whose instances are manufactured by a [[GUSISigFactory]].
+<<GUSISignal.h>>=
+#ifndef _GUSISIGNAL_
+#define _GUSISIGNAL_
+
+#include <signal.h>
+
+#ifdef GUSI_SOURCE
+
+#include <ConditionalMacros.h>
+
+#if PRAGMA_STRUCT_ALIGN
+#pragma options align=native
+#endif
+
+<<Definition of class [[GUSISigProcess]]>>
+<<Definition of class [[GUSISigContext]]>>
+<<Definition of class [[GUSISigFactory]]>>
+
+#if PRAGMA_STRUCT_ALIGN
+#pragma options align=reset
+#endif
+
+#endif
+
+#endif /* _GUSISIGNAL_ */
+@
+
+<<GUSISignal.cp>>=
+#include "GUSIInternal.h"
+#include "GUSISignal.h"
+#include "GUSIDiag.h"
+#include "GUSITimer.h"
+#include "GUSIPThread.h"
+
+#include <stdlib.h>
+#include <unistd.h>
+#include <memory>
+
+GUSI_USING_STD_NAMESPACE
+
+<<Member functions for class [[GUSISigContext]]>>
+<<Member functions for class [[GUSISigProcess]]>>
+<<Member functions for class [[GUSISigFactory]]>>
+
+<<POSIX functions for signal handling>>
+@
+
+\section{Definition of the signal handling engine}
+
+A [[GUSISigProcess]] contains the per-process signal state. [[GetAction]] and [[SetAction]] manipulate the
+action associated with a signal, [[Pending]] returns the set of pending signals, [[Post]] marks a signal 
+as pending (but possibly blocked), and [[Raise]] executes a signal (which we have determined is not 
+blocked). [[Interrupt]] tells whether any pending signal should interrupt a long system call and raises 
+those that don't interrupt.
+<<Definition of class [[GUSISigProcess]]>>=
+class GUSISigContext;
+
+class GUSISigProcess {
+public:
+	virtual struct sigaction &	GetAction(int sig);
+	virtual int					SetAction(int sig, const struct sigaction & act);
+	virtual sigset_t			Pending() const;
+	virtual void				ClearPending(sigset_t clear);
+	virtual void				Post(int sig);
+	virtual bool				Interrupt(int sig, GUSISigContext * context);
+	virtual void				Raise(int sig, GUSISigContext * context);
+	
+	virtual ~GUSISigProcess();
+protected:
+	<<Privatissima of [[GUSISigProcess]]>>
+	
+	friend class GUSISigFactory;
+	GUSISigProcess();
+};
+@ %def GUSISigProcess
+
+A [[GUSISigContext]] contains the per-thread signal state, primarily blocking info. To support 
+[[pthread_kill]], we have out own set of pending signals. [[GetBlocked]] and [[SetBlocked]] manipulate
+the set of blocking signals, [[Pending]] returns the set of pending signals, [[Post]] marks a 
+signal as pending (but possibly blocked), and [[Raise]] executes all eligible signals. [[Interrupt]]
+tells whether any pending signal should interrupt a long system call and raises those that don't
+interrupt.
+<<Definition of class [[GUSISigContext]]>>=
+class GUSISigContext {
+public:
+	virtual	sigset_t	GetBlocked() const;
+	virtual void		SetBlocked(sigset_t sigs);
+	virtual sigset_t	Pending() const;
+	virtual sigset_t	Pending(GUSISigProcess * proc) const;
+	virtual void		ClearPending(sigset_t clear);
+	virtual void		Post(int sig);
+	virtual	sigset_t	Ready(GUSISigProcess * proc);	
+	virtual bool		Interrupt(GUSISigProcess * proc, bool allSigs = false);
+	virtual	void		Raise(GUSISigProcess * proc);	
+
+	virtual ~GUSISigContext();
+protected:
+	<<Privatissima of [[GUSISigContext]]>>
+	
+	friend class GUSISigFactory;
+	GUSISigContext(const GUSISigContext * parent);
+};
+@ %def GUSISigContext
+
+The [[GUSISigFactory]] singleton creates the above two classes, allowing a future extension to
+handle more signals.
+<<Definition of class [[GUSISigFactory]]>>=
+class GUSISigFactory {
+public:
+	virtual GUSISigProcess *	CreateSigProcess();
+	virtual GUSISigContext *	CreateSigContext(const GUSISigContext * parent);
+
+	virtual ~GUSISigFactory();
+	
+	static GUSISigFactory *		Instance();
+	static void					SetInstance(GUSISigFactory * instance);
+protected:
+	GUSISigFactory()			{}
+};
+@ %def GUSISigFactory
+
+\section{Implementation of the signal handling engine}
+
+The [[GUSISigFactory]] is a straighforward overridable singleton.
+<<Member functions for class [[GUSISigFactory]]>>=
+static auto_ptr<GUSISigFactory> sGUSISigFactory;
+
+GUSISigFactory * GUSISigFactory::Instance()
+{
+	if (!sGUSISigFactory.get())
+		SetInstance(new GUSISigFactory);
+		
+	return sGUSISigFactory.get();
+}
+
+void GUSISigFactory::SetInstance(GUSISigFactory * instance)
+{
+	sGUSISigFactory = auto_ptr<GUSISigFactory>(instance);
+}
+
+GUSISigFactory::~GUSISigFactory()
+{
+}
+@
+
+To support more signals, override these creators to make them return subclasses of the required
+classes.
+<<Member functions for class [[GUSISigFactory]]>>=
+GUSISigProcess * GUSISigFactory::CreateSigProcess()
+{
+	return new GUSISigProcess;
+}
+
+GUSISigContext * GUSISigFactory::CreateSigContext(const GUSISigContext * parent)
+{
+	return new GUSISigContext(parent);
+}
+@
+
+[[GUSISigContext]] mainly deals with a set of blocked signals, which it inherits from its parent.
+<<Privatissima of [[GUSISigContext]]>>=
+sigset_t	fPending;
+sigset_t	fBlocked;
+<<Member functions for class [[GUSISigContext]]>>=
+GUSISigContext::GUSISigContext(const GUSISigContext * parent)
+ : fPending(0), fBlocked(parent ? parent->fBlocked : 0)
+{
+}
+
+GUSISigContext::~GUSISigContext()
+{
+}
+@
+
+Many signals cannot be blocked. [[CantBlock]] defines those.
+<<Privatissima of [[GUSISigContext]]>>=
+virtual sigset_t	CantBlock();
+<<Member functions for class [[GUSISigContext]]>>=
+inline sigset_t SigMask(int signal) { return 1 << (signal-1); }
+
+sigset_t GUSISigContext::CantBlock()
+{
+	return SigMask(SIGKILL)
+		|  SigMask(SIGSTOP)
+		|  SigMask(SIGILL)
+		|  SigMask(SIGFPE)
+		|  SigMask(SIGSEGV);
+}
+@
+
+[[GetBlocked]] and [[SetBlocked]] take care of the rest.
+<<Member functions for class [[GUSISigContext]]>>=
+sigset_t GUSISigContext::GetBlocked() const
+{
+	return fBlocked;
+}
+
+void GUSISigContext::SetBlocked(sigset_t sigs)
+{
+	fBlocked = sigs & ~CantBlock();
+}
+@
+
+[[Pending]] and [[Post]] deal with signals pending against a thread (as a result of 
+[[pthread_kill]]).
+<<Member functions for class [[GUSISigContext]]>>=
+sigset_t GUSISigContext::Pending() const
+{
+	return fPending;
+}
+
+void GUSISigContext::ClearPending(sigset_t clear)
+{
+	fPending &= ~clear;
+}
+
+void GUSISigContext::Post(int sig)
+{
+	sigaddset(&fPending, sig);
+}
+@
+
+[[Raise]] initiates a series of signal executions.
+<<Member functions for class [[GUSISigContext]]>>=
+sigset_t GUSISigContext::Pending(GUSISigProcess * proc) const
+{
+	return proc->Pending() | Pending();
+}
+
+sigset_t GUSISigContext::Ready(GUSISigProcess * proc)
+{
+	return Pending(proc) & ~GetBlocked();
+}
+
+void GUSISigContext::Raise(GUSISigProcess * proc)
+{
+	for (;;) {
+		sigset_t	todo = Ready(proc);
+
+		if (!todo)
+			return;
+
+		proc->ClearPending(todo);
+		ClearPending(todo);
+		
+		for (int sig = 1; todo; ++sig)
+			if (sigismember(&todo, sig)) {
+				sigdelset(&todo, sig);
+				proc->Raise(sig, this);
+			}
+	}
+}
+@
+
+[[Interrupt]] looks for signals that should interrupt slow system calls and 
+raises signals that automatically restart.
+<<Member functions for class [[GUSISigContext]]>>=
+bool GUSISigContext::Interrupt(GUSISigProcess * proc, bool allSigs)
+{
+	bool 		interrupt = false;
+	sigset_t	todo = Ready(proc);
+		
+	for (int sig = 1; todo; ++sig)
+		if (sigismember(&todo, sig)) {
+			sigdelset(&todo, sig);
+			interrupt = proc->Interrupt(sig, this) || interrupt || allSigs;
+		}
+	
+	return interrupt;
+}
+@
+
+[[GUSISigProcess]] stores the signal handlers and the set of signals pending against the process.
+<<Privatissima of [[GUSISigProcess]]>>=
+sigset_t			fPending;
+struct sigaction	fAction[NSIG-1];
+<<Member functions for class [[GUSISigProcess]]>>=
+GUSISigProcess::GUSISigProcess()
+ : fPending(0)
+{
+	memset(&fAction, 0, sizeof(fAction));
+}
+
+GUSISigProcess::~GUSISigProcess()
+{
+}
+@
+
+[[GetAction]] returns a signal action.
+<<Member functions for class [[GUSISigProcess]]>>=
+struct sigaction & GUSISigProcess::GetAction(int sig)
+{
+	return fAction[sig-1];
+}
+@
+
+Some actions can't be caught and/or ignored. [[CantCatch]] and [[CantIgnore]] report those.
+<<Privatissima of [[GUSISigProcess]]>>=
+virtual bool CantCatch(int sig);
+virtual bool CantIgnore(int sig);
+<<Member functions for class [[GUSISigProcess]]>>=
+bool GUSISigProcess::CantCatch(int sig)
+{
+	return (sig == SIGKILL) 
+		|| (sig == SIGSTOP);
+}
+
+bool GUSISigProcess::CantIgnore(int sig)
+{
+	return (sig == SIGKILL) 
+		|| (sig == SIGSTOP);
+}
+
+int GUSISigProcess::SetAction(int sig, const struct sigaction & act)
+{
+	if (act.sa_handler == SIG_IGN) {
+		if (CantIgnore(sig))
+			return GUSISetPosixError(EINVAL);
+		sigdelset(&fPending, sig);
+	} else if (act.sa_handler != SIG_DFL) {
+		if (CantCatch(sig))
+			return GUSISetPosixError(EINVAL);
+	}
+	fAction[sig-1] = act;
+	
+	return 0;
+}
+@
+
+[[Pending]] and [[Post]] deal with signals pending against a process (as a result of 
+[[kill]] or [[raise]]).
+<<Member functions for class [[GUSISigProcess]]>>=
+sigset_t GUSISigProcess::Pending() const
+{
+	return fPending;
+}
+
+void GUSISigProcess::ClearPending(sigset_t clear)
+{
+	fPending &= ~clear;
+}
+
+void GUSISigProcess::Post(int sig)
+{
+	sigaddset(&fPending, sig);
+	<<Wake up appropriate contexts to deliver signal>>
+}
+@
+
+To wake up contexts, we make two passes: In the first pass, we look for contexts which have the signal
+unblocked. If we don't find any, we wake up all contexts in the hope that one of them is waiting in a
+[[sigwait]]. This corresponds more or less to the typical nonthreaded and threaded models of thread 
+handling, respectively.
+<<Wake up appropriate contexts to deliver signal>>=
+sigset_t	sigmask = SigMask(sig);
+bool		found   = false;
+for (GUSIContextQueue::iterator context = GUSIContext::begin(); 
+	context != GUSIContext::end(); 
+	++context
+)
+	if (!(context->SigContext()->GetBlocked() & sigmask)) {
+		context->Wakeup();
+		found = true;
+	}
+if (!found)
+	for (GUSIContextQueue::iterator context = GUSIContext::begin(); 
+		context != GUSIContext::end(); 
+		++context
+	)
+		context->Wakeup();
+@
+
+[[Interrupt]] returns [[true]] if the signal should interrupt a slow system call and
+otherwise raises the signal. 
+<<Member functions for class [[GUSISigProcess]]>>=
+bool GUSISigProcess::Interrupt(int sig, GUSISigContext * context)
+{
+	bool interrupt			= true;
+	struct sigaction & act 	= GetAction(sig);
+	
+	if (act.sa_handler == SIG_IGN)
+		interrupt = false; // Ignore signal
+	else if (act.sa_handler == SIG_DFL)
+		interrupt = !DefaultIsIgnore(sig);
+	else if (act.sa_flags & SA_RESTART)	{
+		sigdelset(&fPending, sig);
+		
+		Raise(sig, context);
+		
+		return false;
+	} 
+	
+	if (!interrupt)
+		sigdelset(&fPending, sig);
+	
+	return interrupt;
+}
+@
+
+[[Raise]], finally, is the function for which the whole rest of the engine exists. 
+<<Member functions for class [[GUSISigProcess]]>>=
+void GUSISigProcess::Raise(int sig, GUSISigContext * context)
+{
+	struct sigaction & act = GetAction(sig);
+	
+	if (act.sa_handler == SIG_IGN)
+		return; // Ignore signal
+	else if (act.sa_handler == SIG_DFL)
+		if (DefaultAction(sig, act))
+			return;
+	
+	<<Execute the signal handler>>
+}
+@
+
+Executing an user defined signal handler involves a rather complicated dance of blocking and
+unblocking signals. Unfortunately, this does not work until I make [[longjmp()]] smarter.
+<<Execute the signal handler>>=
+__sig_handler 	handler = act.sa_handler;
+sigset_t		blockset= act.sa_mask;
+
+if (act.sa_flags & SA_RESETHAND)
+	act.sa_handler = SIG_DFL;
+else if (!(act.sa_flags & SA_NODEFER))
+	sigaddset(&blockset, sig);
+
+sigset_t	blocksave = context->GetBlocked();
+//
+// Correct but not yet implementable
+//
+// context->SetBlocked(blocksave | blockset);
+//
+(*handler)(sig);
+sigset_t	blocknew  = context->GetBlocked();
+context->SetBlocked(blocksave | (blocknew & ~blockset));
+@
+
+The default behavior for many signals is to abort the process.
+<<Privatissima of [[GUSISigProcess]]>>=
+virtual bool DefaultIsIgnore(int sig);
+virtual bool DefaultAction(int sig, const struct sigaction & act);
+<<Member functions for class [[GUSISigProcess]]>>=
+extern "C" void _exit(int status);
+
+bool GUSISigProcess::DefaultIsIgnore(int sig)
+{
+	switch (sig) {
+	case SIGCHLD:
+	case SIGCONT:
+	case SIGSTOP:
+	case SIGTSTP:
+	case SIGTTIN:
+	case SIGTTOU:
+		return true;
+	default:
+		return false;
+	}
+}
+
+bool GUSISigProcess::DefaultAction(int sig, const struct sigaction &)
+{
+	if (!DefaultIsIgnore(sig)) {
+		_exit(1);
+		
+		return true;
+	}
+	
+	return false;
+}
+@
+
+\section{Definition of the signal handling POSIX functions}
+
+A considerable number of POSIX functions is concerned with signal handling. Many of them 
+can profit from range checking on signal numbers. Additionally, we have to remap some of
+the signals.
+<<Perform range check on [[signo]]>>=
+if (!GUSI_CASSERT_CLIENT(signo>0 && signo<NSIG))
+	return GUSISetPosixError(EINVAL);
+if (signo == 1)			// SIGABRT in MPW and CW
+	signo = SIGABRT;
+else if (signo == 4) 	// SIGINT in CW
+	signo = SIGINT;
+<<Perform pthreads style range check on [[signo]]>>=
+if (!GUSI_CASSERT_CLIENT(signo>0 && signo<NSIG))
+	return EINVAL;
+@
+
+First of all, we define out of line versions of the signal set manipulators, giving them the
+added benefit of a range check.
+<<POSIX functions for signal handling>>=
+int (sigaddset)(sigset_t *set, int signo)			
+{ 
+	<<Perform range check on [[signo]]>>
+	return sigaddset(set, signo);		
+}
+
+int (sigdelset)(sigset_t *set, int signo)			
+{ 
+	<<Perform range check on [[signo]]>>
+	return sigdelset(set, signo);		
+}
+
+int (sigemptyset)(sigset_t *set)					
+{ 
+	return sigemptyset(set);			
+}
+
+int (sigfillset)(sigset_t *set)						
+{ 
+	return sigfillset(set);			
+}
+
+int (sigismember)(const sigset_t *set, int signo)	
+{ 
+	<<Perform range check on [[signo]]>>
+	return sigismember(set, signo);	
+}
+@ %def sigaddset sigdelset sigemptyset sigfillset sigismember
+
+[[raise]] posts a signal against the current process. 
+<<POSIX functions for signal handling>>=
+int	raise(int signo)
+{
+	<<Perform range check on [[signo]]>>
+	GUSIProcess::Instance()->SigProcess()->Post(signo);
+	
+	return 0;
+}
+@ %def raise
+
+[[pthread_kill]] posts a signal against the specified thread.
+<<POSIX functions for signal handling>>=
+int pthread_kill(pthread_t thread, int signo)
+{
+	if (!signo)
+		return thread ? 0 : ESRCH;
+	<<Perform pthreads style range check on [[signo]]>>
+	thread->SigContext()->Post(signo);
+	thread->Wakeup();
+	
+	return 0;
+}
+@ %def pthread_kill
+
+[[sigaction]] manipulates the signal action table.
+<<POSIX functions for signal handling>>=
+int	sigaction(int signo, const struct sigaction * act, struct sigaction * oact)
+{
+	<<Perform range check on [[signo]]>>
+	GUSISigProcess * proc = GUSIProcess::Instance()->SigProcess();
+	if (oact)
+		*oact = proc->GetAction(signo);
+	if (act)
+		if (proc->SetAction(signo, *act))
+			return -1;
+		else if (act->sa_handler==SIG_IGN)
+			GUSIContext::CreateCurrent()->SigContext()->ClearPending(SigMask(signo));
+	return 0;
+}
+@ %def sigaction
+
+[[signal]] is the historical and rather inconvenient API for [[sigaction]].
+<<POSIX functions for signal handling>>=
+__sig_handler signal(int signo, __sig_handler newhandler)
+{
+	struct sigaction oact;
+	struct sigaction nact;
+	
+	nact.sa_handler	=	newhandler;
+	nact.sa_mask	=	0;
+	nact.sa_flags	= 	SA_RESETHAND;
+	
+	if (sigaction(signo, &nact, &oact))
+		return reinterpret_cast<__sig_handler>(0);
+	else
+		return oact.sa_handler;
+}
+@ %def signal
+
+[[sigpending]] returns the list of pending signals.
+<<POSIX functions for signal handling>>=
+int	sigpending(sigset_t * pending)
+{
+	if (pending)
+		*pending = GUSIProcess::Instance()->SigProcess()->Pending() 
+			| GUSIContext::CreateCurrent()->SigContext()->Pending();
+	return 0;
+}
+@ %def sigpending
+
+[[pthread_sigmask]] and [[sigprocmask]] manipulate the signal mask.
+<<POSIX functions for signal handling>>=
+int pthread_sigmask(int how, const sigset_t * mask, sigset_t * omask)
+{
+	GUSISigContext * context = GUSIContext::CreateCurrent(true)->SigContext();
+	if (omask)
+		*omask = context->GetBlocked();
+	if (mask)
+		switch (how) {
+		case SIG_BLOCK:
+			context->SetBlocked(context->GetBlocked() | *mask);
+			break;
+		case SIG_SETMASK:
+			context->SetBlocked(*mask);
+			break;
+		case SIG_UNBLOCK:
+			context->SetBlocked(context->GetBlocked() & ~*mask);
+			break;
+		default:
+			return EINVAL;
+		}
+	GUSIContext::Raise();
+	return 0;
+}
+
+int	sigprocmask(int how, const sigset_t * mask, sigset_t * omask)
+{
+	return GUSISetPosixError(pthread_sigmask(how, mask, omask));
+}
+@ %def pthread_sigmask sigprocmask
+
+[[sigsuspend]] waits for a signal to arrive. This is one of the few POSIX functions which always returns
+an error.
+<<POSIX functions for signal handling>>=
+int	sigsuspend(const sigset_t * mask)
+{
+	GUSISigContext * context = GUSIContext::CreateCurrent()->SigContext();
+	sigset_t	blocksave = context->GetBlocked();
+	context->SetBlocked(*mask);
+	GUSIContext::SigSuspend();
+	sigset_t	blocknew  = context->GetBlocked();
+	context->SetBlocked(blocksave | (blocknew & ~*mask));
+	
+	return GUSISetPosixError(EINTR);
+}
+@ %def sigsuspend
+
+[[pause]] is a simpler (and less useful) form of [[sigsuspend]].
+<<POSIX functions for signal handling>>=
+int	pause()
+{
+	GUSIContext::CreateCurrent()->SigSuspend();
+	
+	return GUSISetPosixError(EINTR);
+}
+@ %def sigsuspend
+
+[[sigwait]] waits for a blocked signal.
+<<POSIX functions for signal handling>>=
+int sigwait(const sigset_t * sigs, int * signo)
+{
+	if (!GUSI_CASSERT_CLIENT(sigs && signo && !(*sigs & ~GUSIContext::Blocked())))
+		return GUSISetPosixError(EINVAL);
+	GUSIContext::SigWait(*sigs);
+	const sigset_t cursigs = *sigs & GUSIContext::Pending();
+	for (*signo = 1; !sigismember(&cursigs, *signo); ++*signo)
+		;
+	GUSIContext::CreateCurrent()->SigContext()->ClearPending(SigMask(*signo));
+	GUSIProcess::Instance()->SigProcess()->ClearPending(SigMask(*signo));
+	
+	return 0;
+}
+@ %def sigwait
+
+[[abort]] raises [[SIGABRT]] and calls [[_exit]].
+<<POSIX functions for signal handling>>=
+void abort(void)
+{
+	raise(SIGABRT);
+	
+	_exit(2);
+}
+@ %def abort
+
+
+[[_exit]] is similar to [[exit]], but doesn't call handlers established with
+[[atexit]]. MPW already has a working implementation for [[_exit]].
+<<POSIX functions for signal handling>>=
+#ifdef __MWERKS__
+extern int __aborting;
+
+extern "C" void _exit(int code)
+{
+	__aborting = 1;
+	
+	exit(code);
+}
+#endif
+@ %def _exit
+
+To handle alarms, we define the auxiliary class [[GUSIAlarm]].
+<<POSIX functions for signal handling>>=
+class GUSIAlarm : public GUSITimer {
+public:
+	GUSIAlarm(long interval = 0) : GUSITimer(true), fInterval(interval) {}
+	
+	virtual void	Wakeup();
+	long			Restart(long interval = 0);
+private:	
+	long	fInterval;
+};
+
+void GUSIAlarm::Wakeup()
+{
+	GUSIProcess::Instance()->SigProcess()->Post(SIGALRM);
+	if (fInterval)
+		Sleep(fInterval, true);
+}
+
+long GUSIAlarm::Restart(long interval)
+{
+	fInterval = interval;
+	RmvTime(Elem());
+	long rest = tmCount;
+	if (rest < 0)
+		rest = -rest;
+	else
+		rest *= 1000;
+	tmCount		= 0;
+	tmWakeUp		= 0;
+	tmReserved	= 0;
+	InsXTime(Elem());
+	
+	return rest;
+}
+
+static auto_ptr<GUSIAlarm>	sGUSIAlarm;
+@ %def GUSIAlarm
+
+[[alarm]] raises a SIGALRM after a specified number of seconds has elapsed.
+<<POSIX functions for signal handling>>=
+unsigned int alarm(unsigned int delay)
+{
+	unsigned int togo = 0;
+	
+	GUSIAlarm * a = sGUSIAlarm.get();
+	if (a) 
+		togo = static_cast<unsigned int>(a->Restart() / 1000000);
+	else
+		sGUSIAlarm = auto_ptr<GUSIAlarm>(a = new GUSIAlarm);
+	if (a && delay)
+		a->Sleep(delay*1000);
+	
+	return togo;
+}
+@ %def alarm
+
+[[ualarm]] provides a finer resolution and optionally offers the possibility to 
+generate repeated signals.
+<<POSIX functions for signal handling>>=
+useconds_t ualarm(useconds_t delay, useconds_t interval)
+{
+	useconds_t togo = 0;
+	
+	GUSIAlarm * a = sGUSIAlarm.get();
+	if (a) 
+		togo = static_cast<useconds_t>(a->Restart(-static_cast<long>(interval)));
+	else
+		sGUSIAlarm = auto_ptr<GUSIAlarm>(a = new GUSIAlarm(-static_cast<long>(interval)));
+	if (a && delay)
+		a->MicroSleep(delay);
+	
+	return togo;
+}
+@ %def ualarm
+

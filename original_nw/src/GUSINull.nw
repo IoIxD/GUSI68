@@ -1,0 +1,235 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Project	:	GUSI				-	Grand Unified Socket Interface
+% File		:	GUSINull.nw			-	Null device
+% Author	:	Matthias Neeracher
+% Language	:	C++
+% 
+% $Log: GUSINull.nw,v $
+% Revision 1.7  2000/03/06 06:03:29  neeri
+% Check device families for file paths
+%
+% Revision 1.6  1999/08/26 05:45:05  neeri
+% Fixes for literate edition of source code
+%
+% Revision 1.5  1999/05/29 06:26:44  neeri
+% Fixed header guards
+%
+% Revision 1.4  1999/04/29 05:34:22  neeri
+% Support stat/fstat
+%
+% Revision 1.3  1999/03/17 09:05:10  neeri
+% Added GUSITimer, expanded docs
+%
+% Revision 1.2  1998/11/22 23:06:59  neeri
+% Releasing 2.0a4 in a hurry
+%
+% Revision 1.1  1998/08/01 21:32:09  neeri
+% About ready for 2.0a1
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\chapter{Null device}
+
+A [[GUSINullSocket]]Êimplements the null socket class for MacTCP. All instances
+of [[GUSINullSocket]] are created by the [[GUSINullDevice]] singleton, so
+there is no point in exporting the class itself.
+<<GUSINull.h>>=
+#ifndef _GUSINull_
+#define _GUSINull_
+
+#ifdef GUSI_INTERNAL
+
+#include "GUSIDevice.h"
+
+<<Definition of class [[GUSINullDevice]]>>
+
+<<Inline member functions for class [[GUSINullDevice]]>>
+
+#endif /* GUSI_INTERNAL */
+
+#endif /* _GUSINull_ */
+@
+
+<<GUSINull.cp>>=
+#include "GUSIInternal.h"
+#include "GUSINull.h"
+#include "GUSIBasics.h"
+#include "GUSIDiag.h"
+
+#include <fcntl.h>
+#include <stddef.h>
+#include <sys/stat.h>
+
+#include <Devices.h>
+
+<<Definition of class [[GUSINullSocket]]>>
+<<Member functions for class [[GUSINullDevice]]>>
+<<Member functions for class [[GUSINullSocket]]>>
+@
+
+\section{Definition of [[GUSINullDevice]]}
+
+[[GUSINullDevice]] is a singleton subclass of [[GUSIDevice]].
+<<Definition of class [[GUSINullDevice]]>>=
+class GUSINullDevice : public GUSIDevice {
+public:
+	static GUSINullDevice *	Instance();
+	virtual bool	Want(GUSIFileToken & file);
+	virtual GUSISocket * open(GUSIFileToken & file, int flags);
+	virtual int stat(GUSIFileToken & file, struct stat * buf);
+	GUSISocket * open();
+protected:
+	GUSINullDevice()				{}
+	static GUSINullDevice *	sInstance;
+};
+@ %def GUSINullDevice GUSINullDevice::Want GUSINullDevice::open GUSINullDevice::sInstance
+
+\section{Definition of [[GUSINullSocket]]}
+
+<<Definition of class [[GUSINullSocket]]>>=
+class GUSINullSocket : 
+	public GUSISocket
+{
+public:
+	GUSINullSocket();
+	<<Overridden member functions for [[GUSINullSocket]]>>
+};
+@ %def GUSINullSocket
+
+\section{Implementation of [[GUSINullDevice]]}
+
+You can use [[GUSINullSocket]]s directly from C++, but the usual way to use them
+is to call [[GUSIwithNullSockets]] to have [["Dev:Null"]] mapped to them.
+<<Member functions for class [[GUSINullDevice]]>>=
+extern "C" void GUSIwithNullSockets()
+{
+	GUSIDeviceRegistry::Instance()->AddDevice(GUSINullDevice::Instance());
+}
+@
+
+<<Member functions for class [[GUSINullDevice]]>>=
+GUSINullDevice * GUSINullDevice::sInstance = nil;
+<<Inline member functions for class [[GUSINullDevice]]>>=
+inline GUSINullDevice * GUSINullDevice::Instance()
+{
+	if (!sInstance)
+		sInstance = new GUSINullDevice;
+	return sInstance;
+}
+@
+
+[[GUSINullDevice]] will handle only the open request.
+<<Member functions for class [[GUSINullDevice]]>>=
+bool GUSINullDevice::Want(GUSIFileToken & file)
+{
+	if (!file.IsDevice())
+		return false;
+	
+	const char * path = file.Path();
+	
+	switch (file.WhichRequest()) {
+	case GUSIFileToken::kWillOpen:
+	case GUSIFileToken::kWillStat:
+	 	return file.StrFragEqual(path+4, "null") && !path[8];
+	default:
+		return false;
+	}
+}
+@
+
+Open will never fail except for lack of memory.
+<<Member functions for class [[GUSINullDevice]]>>=
+GUSISocket * GUSINullDevice::open(GUSIFileToken &, int)
+{
+	GUSISocket * sock = new GUSINullSocket;
+	if (!sock)
+		GUSISetPosixError(ENOMEM);
+	return sock;
+}
+
+GUSISocket * GUSINullDevice::open()
+{
+	GUSISocket * sock = new GUSINullSocket;
+	if (!sock)
+		GUSISetPosixError(ENOMEM);
+	return sock;
+}
+@
+
+The only original part o a null socket's reply to [[stat]] and [[fstat]] is the device/inode.
+<<Member functions for class [[GUSINullDevice]]>>=
+static int GUSINullStat(struct stat * buf)
+{
+	buf->st_dev			=	'dev ';
+	buf->st_ino			=	'null';
+	buf->st_mode		=	S_IFCHR | 0666 ;
+	buf->st_nlink		=	1;
+	buf->st_uid			=	0;
+	buf->st_gid			=	0;
+	buf->st_rdev		=	0;
+	buf->st_size		=	1;
+	buf->st_atime		=	time(NULL);
+	buf->st_mtime		=	time(NULL);
+	buf->st_ctime		=	time(NULL);
+	buf->st_blksize		=	0;
+	buf->st_blocks		=	1;
+	
+	return 0;
+}
+
+int GUSINullDevice::stat(GUSIFileToken &, struct stat * buf)
+{
+	return GUSINullStat(buf);
+}
+@
+
+\section{Implementation of [[GUSINullSocket]]}
+
+The implementation of [[GUSINullSocket]] is trivial.
+
+<<Member functions for class [[GUSINullSocket]]>>=
+GUSINullSocket::GUSINullSocket()
+{
+}
+@
+
+Read always returns EOF.
+<<Overridden member functions for [[GUSINullSocket]]>>=
+virtual ssize_t	read(const GUSIScatterer & buffer);
+<<Member functions for class [[GUSINullSocket]]>>=
+ssize_t GUSINullSocket::read(const GUSIScatterer &)
+{
+	return 0;
+}
+@
+
+Writes always succeed.
+<<Overridden member functions for [[GUSINullSocket]]>>=
+virtual ssize_t write(const GUSIGatherer & buffer);
+<<Member functions for class [[GUSINullSocket]]>>=
+ssize_t GUSINullSocket::write(const GUSIGatherer & buffer)
+{	
+	return buffer.Length();
+}
+@
+
+Stat returns our special stat block.
+<<Overridden member functions for [[GUSINullSocket]]>>=
+virtual int	fstat(struct stat * buf);
+<<Member functions for class [[GUSINullSocket]]>>=
+int	GUSINullSocket::fstat(struct stat * buf)
+{
+	return GUSINullStat(buf);
+}
+@
+
+Null sockets implement simple calls.
+<<Overridden member functions for [[GUSINullSocket]]>>=
+virtual bool Supports(ConfigOption config);
+<<Member functions for class [[GUSINullSocket]]>>=
+bool GUSINullSocket::Supports(ConfigOption config)
+{
+	return config == kSimpleCalls;
+}
+@
+

@@ -1,0 +1,806 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Project	:	GUSI				-	Grand Unified Socket Interface
+% File		:	GUSIDevice.nw		-	Devices
+% Author	:	Matthias Neeracher
+% Language	:	C++
+% 
+% $Log: GUSIDevice.nw,v $
+% Revision 1.13  2000/06/12 04:22:30  neeri
+% Return values, not references
+%
+% Revision 1.12  2000/05/23 06:58:03  neeri
+% Improve formatting
+%
+% Revision 1.11  2000/03/15 07:22:06  neeri
+% Enforce alignment choices
+%
+% Revision 1.10  2000/03/06 06:30:30  neeri
+% Check for nonexistent device
+%
+% Revision 1.9  1999/08/26 05:45:01  neeri
+% Fixes for literate edition of source code
+%
+% Revision 1.8  1999/07/19 06:21:02  neeri
+% Add mkdir/rmdir, fix various file manager related bugs
+%
+% Revision 1.7  1999/05/29 06:26:42  neeri
+% Fixed header guards
+%
+% Revision 1.6  1999/03/17 09:05:07  neeri
+% Added GUSITimer, expanded docs
+%
+% Revision 1.5  1998/11/22 23:06:52  neeri
+% Releasing 2.0a4 in a hurry
+%
+% Revision 1.4  1998/10/25 11:37:38  neeri
+% More configuration hooks
+%
+% Revision 1.3  1998/10/11 16:45:13  neeri
+% Ready to release 2.0a2
+%
+% Revision 1.2  1998/08/01 21:28:57  neeri
+% Add directory operations
+%
+% Revision 1.1  1998/01/25 21:02:45  neeri
+% Engine implemented, except for signals & scheduling
+%
+% Revision 1.1  1996/12/16 02:12:40  neeri
+% TCP Sockets sort of work
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\chapter{Devices}
+
+Similar to the creation of sockets, operations on files like opening or
+renaming them need to be dispatched to a variety of special cases (Most of
+them of the form "Dev:" preceded by a device name). Analogous to the
+[[GUSISocketFactory]] subclasses registered in a [[GUSISocketDomainRegistry]],
+we therefore have subclasses of [[GUSIDevice]] registered in a 
+[[GUSIDeviceRegistry]], although the details of the two registries are
+quite different.
+
+During resolution of a file name, the name and information about it is passed
+around in a [[GUSIFileToken]].
+<<GUSIDevice.h>>=
+#ifndef _GUSIDevice_
+#define _GUSIDevice_
+
+#ifdef GUSI_SOURCE
+
+#include "GUSISocket.h"
+#include "GUSIFileSpec.h"
+
+#include <dirent.h>
+#include <utime.h>
+
+#include <ConditionalMacros.h>
+
+#if PRAGMA_STRUCT_ALIGN
+#pragma options align=native
+#endif
+
+<<Definition of class [[GUSIFileToken]]>>
+<<Definition of class [[GUSIDirectory]]>>
+<<Definition of class [[GUSIDeviceRegistry]]>>
+<<Definition of class [[GUSIDevice]]>>
+
+#if PRAGMA_STRUCT_ALIGN
+#pragma options align=reset
+#endif
+
+<<Definition of [[GUSISetupDevices]] hook>>
+
+<<Inline member functions for class [[GUSIDeviceRegistry]]>>
+
+#endif /* GUSI_SOURCE */
+
+#endif /* _GUSIDevice_ */
+@
+
+<<GUSIDevice.cp>>=
+#include "GUSIInternal.h"
+#include "GUSIDevice.h"
+#include "GUSIMacFile.h"
+#include "GUSINull.h"
+#include "GUSIDiag.h"
+
+#include <fcntl.h>
+#include <utility>
+
+GUSI_USING_STD_NAMESPACE
+
+<<Member functions for class [[GUSIFileToken]]>>
+<<Member functions for class [[GUSIDevice]]>>
+<<Member functions for class [[GUSIDeviceRegistry]]>>
+@
+
+\section{Definition of [[GUSIFileToken]]}
+
+A [[GUSIFileToken]] consists of a pointer to the name as a C string, of a pointer
+to the [[GUSIDevice]] the token resolves to, and, if the token refers to a
+file name rather than a device name, a pointer to a [[GUSIFileSpec]]. Since 
+depending on the call, different [[GUSIDevice]] subclasses may handle it, a
+request code has to be passed to the constructor, too.
+<<Definition of class [[GUSIFileToken]]>>=
+class GUSIDevice;
+
+class GUSIFileToken : public GUSIFileSpec {
+public:
+	enum Request {
+		<<Requests for [[GUSIFileToken]]>>
+		kNoRequest
+	};
+	
+	GUSIFileToken(const char * path, Request request, bool useAlias = false);
+	GUSIFileToken(const GUSIFileSpec & spec, Request request);
+	GUSIFileToken(short fRefNum, Request request);
+	
+	bool	 		IsFile() 		const { return fIsFile; 		}
+	bool	 		IsDevice() 		const { return !fIsFile; 		}
+	Request			WhichRequest()	const { return fRequest;		}	
+	GUSIDevice *	Device()		const {	return fDevice;			}
+	const char *	Path()			const { return fPath;			}
+	
+	static bool		StrFragEqual(const char * name, const char * frag);
+	enum StdStream {
+		kStdin,
+		kStdout,
+		kStderr,
+		kConsole,
+		kNoStdStream = -2
+	};				
+	static StdStream StrStdStream(const char * name);
+	
+private:
+	GUSIDevice * 	fDevice;
+	const char *	fPath;
+	bool			fIsFile;
+	Request			fRequest;
+};
+@ %def GUSIFileToken
+
+\section{Definition of [[GUSIDevice]]}
+
+[[GUSIDevice]] consists of a few maintenance functions and the 
+device operations. The request dispatcher first calls [[Want]] for
+each candidate device and as soon as it's successful, calls the specific
+operation. Devices are kept in a linked list by the [[GUSIDeviceRegistry]].
+<<Definition of class [[GUSIDevice]]>>=
+class GUSIDevice {
+public:
+	virtual bool	Want(GUSIFileToken & file);
+	
+	<<Operations for [[GUSIDevice]]>>
+protected:
+	friend class GUSIDeviceRegistry;
+	friend class GUSIDeviceRegistry::iterator;
+	
+	GUSIDevice() : fNextDevice(nil)			{}
+	virtual ~GUSIDevice()					{}
+	
+	GUSIDevice	*	fNextDevice;
+};
+@ %def GUSIDevice
+
+\section{Definition of [[GUSIDeviceRegistry]]}
+
+The [[GUSIDeviceRegistry]] is a singleton class registering all socket 
+domains.
+<<Definition of class [[GUSIDeviceRegistry]]>>=
+class GUSIDeviceRegistry {
+public:
+	<<Creation of [[GUSIDeviceRegistry]]>>
+	<<Operations for [[GUSIDeviceRegistry]]>>
+	<<Registration interface of [[GUSIDeviceRegistry]]>>
+	<<Iterator on [[GUSIDeviceRegistry]]>>
+protected:
+	<<Looking up a device in the [[GUSIDeviceRegistry]]>>
+private:
+	<<Privatissima of [[GUSIDeviceRegistry]]>>
+};
+@ %def GUSIDeviceRegistry
+
+The only instance of [[GUSIDeviceRegistry]] is, as usual, obtained by calling
+[[Instance]]. 
+<<Creation of [[GUSIDeviceRegistry]]>>=
+static  GUSIDeviceRegistry *	Instance();
+@ %def GUSIDeviceRegistry::Instance
+
+[[AddDevice]] and [[RemoveDevice]] add and remove a [[GUSIDevice]]. 
+<<Registration interface of [[GUSIDeviceRegistry]]>>=
+void AddDevice(GUSIDevice * device);
+void RemoveDevice(GUSIDevice * device);
+@ %def GUSIDeviceRegistry::AddDevice GUSIDeviceRegistry::RemoveDevice 
+
+On construction, a [[GUSIFileToken]] looks up the appropriate device in the
+[[GUSIDeviceRegistry]].
+<<Looking up a device in the [[GUSIDeviceRegistry]]>>=
+friend class GUSIFileToken;
+
+GUSIDevice *	Lookup(GUSIFileToken & file);
+@
+
+It is convenient to define iterators to iterate across all devices.
+<<Iterator on [[GUSIDeviceRegistry]]>>=
+class iterator;
+
+iterator begin();
+iterator end();
+@ %def GUSIDeviceRegistry::iterator
+
+\section{Operations on Devices}
+
+The [[open]] operation creates a new socket for the specified path or file
+specification.
+<<Requests for [[GUSIFileToken]]>>=
+kWillOpen,
+<<Operations for [[GUSIDevice]]>>=
+virtual GUSISocket * open(GUSIFileToken & file, int flags);
+<<Operations for [[GUSIDeviceRegistry]]>>=
+GUSISocket * open(const char * path, int flags);
+@
+
+[[remove]] deletes a path or file specification.
+<<Requests for [[GUSIFileToken]]>>=
+kWillRemove,
+<<Operations for [[GUSIDevice]]>>=
+virtual int remove(GUSIFileToken & file);
+<<Operations for [[GUSIDeviceRegistry]]>>=
+int remove(const char * path);
+@
+
+[[rename]] renames a path or file specification.
+<<Requests for [[GUSIFileToken]]>>=
+kWillRename,
+<<Operations for [[GUSIDevice]]>>=
+virtual int rename(GUSIFileToken & from, const char * newname);
+<<Operations for [[GUSIDeviceRegistry]]>>=
+int rename(const char * oldname, const char * newname);
+@
+
+[[stat]] gathers statistical data about a file or directory.
+<<Requests for [[GUSIFileToken]]>>=
+kWillStat,
+<<Operations for [[GUSIDevice]]>>=
+virtual int stat(GUSIFileToken & file, struct stat * buf);
+<<Operations for [[GUSIDeviceRegistry]]>>=
+int stat(const char * path, struct stat * buf, bool useAlias);
+@
+
+[[chmod]] changes file modes, to the extent that this is meaningful on MacOS.
+<<Requests for [[GUSIFileToken]]>>=
+kWillChmod,
+<<Operations for [[GUSIDevice]]>>=
+virtual int chmod(GUSIFileToken & file, mode_t mode);
+<<Operations for [[GUSIDeviceRegistry]]>>=
+int chmod(const char * path, mode_t mode);
+@
+
+[[utime]] bumps a file's modification time.
+<<Requests for [[GUSIFileToken]]>>=
+kWillUtime,
+<<Operations for [[GUSIDevice]]>>=
+virtual int utime(GUSIFileToken & file, const utimbuf * times);
+<<Operations for [[GUSIDeviceRegistry]]>>=
+int utime(const char * path, const utimbuf * times);
+@
+
+[[access]] checks access permissions for a file.
+<<Requests for [[GUSIFileToken]]>>=
+kWillAccess,
+<<Operations for [[GUSIDevice]]>>=
+virtual int access(GUSIFileToken & file, int mode);
+<<Operations for [[GUSIDeviceRegistry]]>>=
+int access(const char * path, int mode);
+@
+
+[[mkdir]] creates a directory.
+<<Requests for [[GUSIFileToken]]>>=
+kWillMkdir,
+<<Operations for [[GUSIDevice]]>>=
+virtual int mkdir(GUSIFileToken & file);
+<<Operations for [[GUSIDeviceRegistry]]>>=
+int mkdir(const char * path);
+@
+
+[[rmdir]] deletes a directory.
+<<Requests for [[GUSIFileToken]]>>=
+kWillRmdir,
+<<Operations for [[GUSIDevice]]>>=
+virtual int rmdir(GUSIFileToken & file);
+<<Operations for [[GUSIDeviceRegistry]]>>=
+int rmdir(const char * path);
+@
+
+[[opendir]] opens a directory handle on the given directory.
+<<Requests for [[GUSIFileToken]]>>=
+kWillOpendir,
+<<Operations for [[GUSIDevice]]>>=
+virtual GUSIDirectory * opendir(GUSIFileToken & file);
+<<Operations for [[GUSIDeviceRegistry]]>>=
+GUSIDirectory * opendir(const char * path);
+@
+
+[[symlink]] creates a symbolic link to a file.
+<<Requests for [[GUSIFileToken]]>>=
+kWillSymlink,
+<<Operations for [[GUSIDevice]]>>=
+virtual int symlink(GUSIFileToken & to, const char * newlink);
+<<Operations for [[GUSIDeviceRegistry]]>>=
+int symlink(const char * target, const char * newlink);
+@
+
+[[readlink]] reads the contents of a symbolic link.
+<<Requests for [[GUSIFileToken]]>>=
+kWillReadlink,
+<<Operations for [[GUSIDevice]]>>=
+virtual int readlink(GUSIFileToken & link, char * buf, int bufsize);
+<<Operations for [[GUSIDeviceRegistry]]>>=
+int readlink(const char * path, char * buf, int bufsize);
+@
+
+[[fgetfileinfo]] and [[fsetfileinfo]] reads and set the type and creator
+code of a file.
+<<Requests for [[GUSIFileToken]]>>=
+kWillGetfileinfo,
+kWillSetfileinfo,
+<<Operations for [[GUSIDevice]]>>=
+virtual int fgetfileinfo(GUSIFileToken & file, OSType * creator, OSType * type);
+virtual int fsetfileinfo(GUSIFileToken & file, OSType creator, OSType type);
+<<Operations for [[GUSIDeviceRegistry]]>>=
+int fgetfileinfo(const char * path, OSType * creator, OSType * type);
+int fsetfileinfo(const char * path, OSType creator, OSType type);
+@
+
+[[faccess]] manipulates MPW properties of files.
+<<Requests for [[GUSIFileToken]]>>=
+kWillFaccess,
+<<Operations for [[GUSIDevice]]>>=
+virtual int faccess(GUSIFileToken & file, unsigned * cmd, void * arg);
+<<Operations for [[GUSIDeviceRegistry]]>>=
+int faccess(const char * path, unsigned * cmd, void * arg);
+@
+
+\section{Definition of [[GUSIDirectory]]}
+
+[[GUSIDirectory]] is a directory handle to iterate over all entries in a 
+directory.
+<<Definition of class [[GUSIDirectory]]>>=
+class GUSIDirectory {
+public:
+	virtual 		 	~GUSIDirectory() {}
+	virtual dirent    *	readdir() = 0;
+	virtual long 		telldir() = 0;
+	virtual void 		seekdir(long pos) = 0;
+	virtual void 		rewinddir() = 0;
+protected:
+	friend class GUSIDevice;
+	GUSIDirectory()     {}
+};
+@ %def GUSIDirectory
+
+\section{Implementation of [[GUSIFileToken]]}
+
+Identifying a name starting with "Dev:" as a file or a device is a dangerous job.
+Currently, there is no possibility to entirely disable device interpretation, so 
+we're using the following heuristics in order to minimize conflicts with real file
+names:
+
+\begin{itemize}
+\item Any name corresponding to an existing file is a file
+\item Any name not recognized by any device domain is a file
+\end{itemize}
+
+We need many case insensitive comparisons. Since we always compare to fixed
+strings withing the ASCII set, we can do a cheap implementation.
+<<Member functions for class [[GUSIFileToken]]>>=
+bool GUSIFileToken::StrFragEqual(const char * name, const char * frag)
+{
+	do {
+		if ((*name++ | 0x20) != *frag++)
+			return false;
+	} while (*frag);
+	
+	return true;
+}
+
+GUSIFileToken::GUSIFileToken(const char * path, Request request, bool useAlias)
+	: fPath(path), GUSIFileSpec(path, useAlias), fDevice(nil), fRequest(request), fIsFile(false)
+{
+	if (!StrFragEqual(path, "dev:") || (!Error() && Exists()))
+		goto treatAsFile;
+
+	if (fDevice = GUSIDeviceRegistry::Instance()->Lookup(*this))
+		return;
+
+treatAsFile:	
+	fIsFile = true;
+	fDevice = GUSIDeviceRegistry::Instance()->Lookup(*this);
+}
+@
+
+Some names need to be detected frequently. We've already established that the
+name starts with [["dev:"]].
+<<Member functions for class [[GUSIFileToken]]>>=
+GUSIFileToken::StdStream GUSIFileToken::StrStdStream(const char * name)
+{
+	if (StrFragEqual(name+4, "console") && !name[11])
+		return kConsole;
+	if (StrFragEqual(name+4, "std"))
+		if (StrFragEqual(name+7, "in") && !name[9])
+			return kStdin;
+		else if (StrFragEqual(name+7, "out") && !name[10])
+			return kStdout;
+		else if (StrFragEqual(name+7, "err") && !name[10])
+			return kStderr;
+	return kNoStdStream;
+}
+@
+
+The other constructors of [[GUSIFileToken]] are always called for real files
+and thus present no ambiguities.
+<<Member functions for class [[GUSIFileToken]]>>=
+GUSIFileToken::GUSIFileToken(const GUSIFileSpec & spec, Request request)
+	: fPath(nil), GUSIFileSpec(spec), fDevice(nil), fRequest(request), fIsFile(true)
+{
+	fDevice = GUSIDeviceRegistry::Instance()->Lookup(*this);
+}
+
+GUSIFileToken::GUSIFileToken(short fRefNum, Request request)
+	: fPath(nil), GUSIFileSpec(fRefNum), fDevice(nil), fRequest(request), fIsFile(true)
+{
+	fDevice = GUSIDeviceRegistry::Instance()->Lookup(*this);
+}
+@
+
+\section{Implementation of [[GUSIDevice]]}
+
+By default, a device wants no files.
+<<Member functions for class [[GUSIDevice]]>>=
+bool	GUSIDevice::Want(GUSIFileToken &)
+{
+	return false;
+}
+@
+
+Since individual devices are free to opt out of every operation, we have to 
+implement them all as empty functions here. Calling any of these functions is
+an internal error.
+<<This should not happen, fail assertion and return [[EOPNOTSUPP]]>>=
+{
+	GUSI_SASSERT_INTERNAL(false, "Undefined device operation");
+	
+	return GUSISetPosixError(EOPNOTSUPP);
+}
+<<This should not happen, fail assertion and return [[nil]]>>=
+{
+	GUSI_SASSERT_INTERNAL(false, "Undefined device operation");
+	
+	GUSISetPosixError(EOPNOTSUPP);
+	
+	return nil;
+}
+<<Member functions for class [[GUSIDevice]]>>=
+GUSISocket * GUSIDevice::open(GUSIFileToken &, int)
+<<This should not happen, fail assertion and return [[nil]]>>
+
+int GUSIDevice::remove(GUSIFileToken &)
+<<This should not happen, fail assertion and return [[EOPNOTSUPP]]>>
+
+int GUSIDevice::rename(GUSIFileToken &, const char *)
+<<This should not happen, fail assertion and return [[EOPNOTSUPP]]>>
+
+int GUSIDevice::stat(GUSIFileToken &, struct stat *)
+<<This should not happen, fail assertion and return [[EOPNOTSUPP]]>>
+
+int GUSIDevice::chmod(GUSIFileToken &, mode_t)
+<<This should not happen, fail assertion and return [[EOPNOTSUPP]]>>
+
+int GUSIDevice::utime(GUSIFileToken &, const utimbuf *)
+<<This should not happen, fail assertion and return [[EOPNOTSUPP]]>>
+
+int GUSIDevice::access(GUSIFileToken &, int)
+<<This should not happen, fail assertion and return [[EOPNOTSUPP]]>>
+
+int GUSIDevice::mkdir(GUSIFileToken &)
+<<This should not happen, fail assertion and return [[nil]]>>
+
+int GUSIDevice::rmdir(GUSIFileToken &)
+<<This should not happen, fail assertion and return [[nil]]>>
+
+GUSIDirectory * GUSIDevice::opendir(GUSIFileToken &)
+<<This should not happen, fail assertion and return [[nil]]>>
+
+int GUSIDevice::symlink(GUSIFileToken &, const char *)
+<<This should not happen, fail assertion and return [[EOPNOTSUPP]]>>
+
+int GUSIDevice::readlink(GUSIFileToken &, char *, int)
+<<This should not happen, fail assertion and return [[EOPNOTSUPP]]>>
+
+int GUSIDevice::fgetfileinfo(GUSIFileToken &, OSType *, OSType *)
+<<This should not happen, fail assertion and return [[EOPNOTSUPP]]>>
+
+int GUSIDevice::fsetfileinfo(GUSIFileToken &, OSType, OSType)
+<<This should not happen, fail assertion and return [[EOPNOTSUPP]]>>
+
+int GUSIDevice::faccess(GUSIFileToken &, unsigned *, void *)
+<<This should not happen, fail assertion and return [[EOPNOTSUPP]]>>
+@
+
+\section{Implementation of [[GUSIDeviceRegistry]]}
+
+<<Definition of [[GUSISetupDevices]] hook>>=
+extern "C" void GUSISetupDevices();
+@ %def GUSISetupDevices
+<<Privatissima of [[GUSIDeviceRegistry]]>>=
+static GUSIDeviceRegistry *	sInstance;
+<<Member functions for class [[GUSIDeviceRegistry]]>>=
+GUSIDeviceRegistry *	GUSIDeviceRegistry::sInstance;
+<<Inline member functions for class [[GUSIDeviceRegistry]]>>=
+inline GUSIDeviceRegistry * GUSIDeviceRegistry::Instance()
+{
+	if (!sInstance) {
+		sInstance = new GUSIDeviceRegistry();
+		GUSISetupDevices();
+	}
+	
+	return sInstance;
+}
+@
+
+Devices are stored in a linked list. On creation of the registry, it immediately
+registers the instance for plain Macintosh file sockets, to which pretty much all
+operations default. This device will never refuse any request.
+<<Privatissima of [[GUSIDeviceRegistry]]>>=
+GUSIDevice *	fFirstDevice;
+GUSIDeviceRegistry();
+@ %def GUSIDeviceRegistry::fFirstDevice
+<<Member functions for class [[GUSIDeviceRegistry]]>>=
+GUSIDeviceRegistry::GUSIDeviceRegistry()
+	: fFirstDevice(nil)
+{
+	AddDevice(GUSIMacFileDevice::Instance());
+}
+@
+
+[[AddDevice]] and [[RemoveDevice]] add and remove a [[GUSIDevice]].
+<<Member functions for class [[GUSIDeviceRegistry]]>>=
+void GUSIDeviceRegistry::AddDevice(GUSIDevice * device)
+{
+	device->fNextDevice = fFirstDevice;
+	fFirstDevice		= device;
+}
+
+void GUSIDeviceRegistry::RemoveDevice(GUSIDevice * device)
+{
+	if (fFirstDevice == device)
+		fFirstDevice = device->fNextDevice;
+	else
+		for (iterator dev = begin(); dev != end(); ++dev)
+			if (dev->fNextDevice == device) {
+				dev->fNextDevice = device->fNextDevice;
+				
+				break;
+			}
+}
+@
+
+To look up, we iterate through all devices.
+<<Member functions for class [[GUSIDeviceRegistry]]>>=
+GUSIDevice * GUSIDeviceRegistry::Lookup(GUSIFileToken & file)
+{
+	for (iterator dev = begin(); dev != end(); ++dev)
+		if (dev->Want(file))
+			return &(*dev);
+	
+	return static_cast<GUSIDevice *>(nil);
+}
+@
+
+<<Member functions for class [[GUSIDeviceRegistry]]>>=
+GUSISocket * GUSIDeviceRegistry::open(const char * path, int flags)
+{
+	GUSIFileToken	file(path, GUSIFileToken::kWillOpen, (flags & O_ALIAS) != 0);
+	
+	if (GUSIDevice * device = file.Device())
+		return device->open(file, flags);
+	else
+		return GUSISetPosixError(ENOENT), static_cast<GUSISocket *>(nil);
+}
+@
+
+<<Member functions for class [[GUSIDeviceRegistry]]>>=
+int GUSIDeviceRegistry::remove(const char * path)
+{
+	GUSIFileToken	file(path, GUSIFileToken::kWillRemove, true);
+	
+	if (GUSIDevice * device = file.Device())
+		return device->remove(file);
+	else
+		return GUSISetPosixError(ENOENT);
+}
+@
+
+<<Member functions for class [[GUSIDeviceRegistry]]>>=
+int GUSIDeviceRegistry::rename(const char * oldname, const char * newname)
+{
+	GUSIFileToken	oldfile(oldname, GUSIFileToken::kWillRename, true);
+	
+	if (GUSIDevice * device = oldfile.Device())
+		return device->rename(oldfile, newname);
+	else
+		return GUSISetPosixError(ENOENT);
+}
+@
+
+<<Member functions for class [[GUSIDeviceRegistry]]>>=
+int GUSIDeviceRegistry::stat(const char * path, struct stat * buf, bool useAlias)
+{
+	GUSIFileToken 	file(path, GUSIFileToken::kWillStat, useAlias);
+	
+	if (GUSIDevice * device = file.Device())
+		return device->stat(file, buf);
+	else
+		return GUSISetPosixError(ENOENT);
+}
+@
+
+<<Member functions for class [[GUSIDeviceRegistry]]>>=
+int GUSIDeviceRegistry::chmod(const char * path, mode_t mode)
+{
+	GUSIFileToken 	file(path, GUSIFileToken::kWillChmod, false);
+	
+	if (GUSIDevice * device = file.Device())
+		return device->chmod(file, mode);
+	else
+		return GUSISetPosixError(ENOENT);
+}
+@
+
+<<Member functions for class [[GUSIDeviceRegistry]]>>=
+int GUSIDeviceRegistry::utime(const char * path, const utimbuf * times)
+{
+	GUSIFileToken 	file(path, GUSIFileToken::kWillUtime, false);
+	
+	if (GUSIDevice * device = file.Device())
+		return device->utime(file, times);
+	else
+		return GUSISetPosixError(ENOENT);
+}
+@
+
+<<Member functions for class [[GUSIDeviceRegistry]]>>=
+int GUSIDeviceRegistry::access(const char * path, int mode)
+{
+	GUSIFileToken 	file(path, GUSIFileToken::kWillAccess, false);
+	
+	if (GUSIDevice * device = file.Device())
+		return device->access(file, mode);
+	else
+		return GUSISetPosixError(ENOENT);
+}
+@
+
+<<Member functions for class [[GUSIDeviceRegistry]]>>=
+int GUSIDeviceRegistry::mkdir(const char * path)
+{
+	GUSIFileToken	file(path, GUSIFileToken::kWillMkdir);
+	
+	if (GUSIDevice * device = file.Device())
+		return device->mkdir(file);
+	else
+		return GUSISetPosixError(ENOENT);
+}
+@
+
+<<Member functions for class [[GUSIDeviceRegistry]]>>=
+int GUSIDeviceRegistry::rmdir(const char * path)
+{
+	GUSIFileToken	file(path, GUSIFileToken::kWillRmdir);
+	
+	if (GUSIDevice * device = file.Device())
+		return device->rmdir(file);
+	else
+		return GUSISetPosixError(ENOENT);
+}
+@
+
+<<Member functions for class [[GUSIDeviceRegistry]]>>=
+GUSIDirectory * GUSIDeviceRegistry::opendir(const char * path)
+{
+	GUSIFileToken	file(path, GUSIFileToken::kWillOpendir);
+	
+	if (GUSIDevice * device = file.Device())
+		return device->opendir(file);
+	else
+		return GUSISetPosixError(ENOENT), static_cast<GUSIDirectory *>(nil);
+}
+@
+
+<<Member functions for class [[GUSIDeviceRegistry]]>>=
+int GUSIDeviceRegistry::symlink(const char * target, const char * newlink)
+{
+	GUSIFileToken	file(target, GUSIFileToken::kWillSymlink, true);
+	
+	if (GUSIDevice * device = file.Device())
+		return device->symlink(file, newlink);
+	else
+		return GUSISetPosixError(ENOENT);
+}
+@
+
+<<Member functions for class [[GUSIDeviceRegistry]]>>=
+int GUSIDeviceRegistry::readlink(const char * path, char * buf, int bufsize)
+{
+	GUSIFileToken	file(path, GUSIFileToken::kWillReadlink, true);
+	
+	if (GUSIDevice * device = file.Device())
+		return device->readlink(file, buf, bufsize);
+	else
+		return GUSISetPosixError(ENOENT);
+}
+@
+
+<<Member functions for class [[GUSIDeviceRegistry]]>>=
+int GUSIDeviceRegistry::fgetfileinfo(const char * path, OSType * creator, OSType * type)
+{
+	GUSIFileToken	file(path, GUSIFileToken::kWillGetfileinfo, true);
+	
+	if (GUSIDevice * device = file.Device())
+		return device->fgetfileinfo(file, creator, type);
+	else
+		return GUSISetPosixError(ENOENT);
+}
+@
+
+<<Member functions for class [[GUSIDeviceRegistry]]>>=
+int GUSIDeviceRegistry::fsetfileinfo(const char * path, OSType creator, OSType type)
+{
+	GUSIFileToken	file(path, GUSIFileToken::kWillSetfileinfo, true);
+	
+	if (GUSIDevice * device = file.Device())
+		return device->fsetfileinfo(file, creator, type);
+	else
+		return GUSISetPosixError(ENOENT);
+}
+@
+
+<<Member functions for class [[GUSIDeviceRegistry]]>>=
+int GUSIDeviceRegistry::faccess(const char * path, unsigned * cmd, void * arg)
+{
+	GUSIFileToken	file(path, GUSIFileToken::kWillFaccess, true);
+	
+	if (GUSIDevice * device = file.Device())
+		return device->faccess(file, cmd, arg);
+	else
+		return GUSISetPosixError(ENOENT);
+}
+@
+
+The [[GUSIDeviceRegistry]] forward iterator is simple.
+<<Inline member functions for class [[GUSIDeviceRegistry]]>>=
+class GUSIDeviceRegistry::iterator {
+public:
+	iterator(GUSIDevice * device = 0) : fDevice(device) {}
+	GUSIDeviceRegistry::iterator & operator++()		
+		{ fDevice = fDevice->fNextDevice; return *this; 					}
+	GUSIDeviceRegistry::iterator operator++(int)
+		{ GUSIDeviceRegistry::iterator old(*this); fDevice = fDevice->fNextDevice; return old; 	}
+	bool operator==(const GUSIDeviceRegistry::iterator other) const
+								{ return fDevice==other.fDevice; 			}
+	GUSIDevice & operator*()	{ return *fDevice;							}
+	GUSIDevice * operator->()	{ return fDevice;							}
+private:
+	GUSIDevice *				fDevice;
+};
+
+inline GUSIDeviceRegistry::iterator GUSIDeviceRegistry::begin()		
+{ 
+	return GUSIDeviceRegistry::iterator(fFirstDevice);	
+}
+
+inline GUSIDeviceRegistry::iterator GUSIDeviceRegistry::end()		
+{ 
+	return GUSIDeviceRegistry::iterator();				
+}
+@

@@ -1,0 +1,1069 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Project	:	GUSI				-	Grand Unified Socket Interface
+% File		:	GUSIBuffer.nw		-	Buffering for GUSI
+% Author	:	Matthias Neeracher
+% Language	:	C++
+% 
+% $Log: GUSIBuffer.nw,v $
+% Revision 1.20  2001/01/17 08:33:14  neeri
+% Need to set fOldBuffer to nil after deleting
+%
+% Revision 1.19  2000/10/16 04:34:22  neeri
+% Releasing 2.1.2
+%
+% Revision 1.18  2000/05/23 06:53:14  neeri
+% Improve formatting
+%
+% Revision 1.17  2000/03/15 07:22:06  neeri
+% Enforce alignment choices
+%
+% Revision 1.16  1999/09/09 07:19:18  neeri
+% Fix read-ahead switch-off
+%
+% Revision 1.15  1999/08/26 05:44:59  neeri
+% Fixes for literate edition of source code
+%
+% Revision 1.14  1999/06/30 07:42:05  neeri
+% Getting ready to release 2.0b3
+%
+% Revision 1.13  1999/05/30 03:09:29  neeri
+% Added support for MPW compilers
+%
+% Revision 1.12  1999/03/17 09:05:05  neeri
+% Added GUSITimer, expanded docs
+%
+% Revision 1.11  1998/11/22 23:06:50  neeri
+% Releasing 2.0a4 in a hurry
+%
+% Revision 1.10  1998/10/25 11:28:43  neeri
+% Added MSG_PEEK support, recursive locks.
+%
+% Revision 1.9  1998/08/02 12:31:36  neeri
+% Another typo
+%
+% Revision 1.8  1998/08/02 11:20:06  neeri
+% Fixed some typos
+%
+% Revision 1.7  1998/01/25 20:53:51  neeri
+% Engine implemented, except for signals & scheduling
+%
+% Revision 1.6  1997/11/13 21:12:08  neeri
+% Fall 1997
+%
+% Revision 1.5  1996/12/22 19:57:55  neeri
+% TCP streams work
+%
+% Revision 1.4  1996/12/16 02:16:02  neeri
+% Add Size(), make inlines inline, use BlockMoveData
+%
+% Revision 1.3  1996/11/24  13:00:26  neeri
+% Fix comment leaders
+%
+% Revision 1.2  1996/11/24  12:52:05  neeri
+% Added GUSIPipeSockets
+%
+% Revision 1.1.1.1  1996/11/03  02:43:32  neeri
+% Imported into CVS
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\chapter{Buffering for GUSI}
+
+This section defines four classes that handle buffering for GUSI: 
+[[GUSIScatterer]], [[GUSIGatherer]], and their common ancestor
+[[GUSIScattGath]] convert between [[iovecs]]Êand simple buffers in the
+absence of specialized communications routines. A [[GUSIRingBuffer]] 
+mediates between a producer and a consumer, one of which is typically
+normal code and the other interrupt level code.
+
+<<GUSIBuffer.h>>=
+#ifndef _GUSIBuffer_
+#define _GUSIBuffer_
+
+#ifdef GUSI_SOURCE
+
+#include <sys/types.h>
+#include <sys/uio.h>
+
+#include <MacTypes.h>
+
+#include "GUSIDiag.h"
+#include "GUSIBasics.h"
+
+#include <ConditionalMacros.h>
+
+#if PRAGMA_STRUCT_ALIGN
+#pragma options align=native
+#endif
+
+<<Definition of class [[GUSIScattGath]]>>
+<<Definition of class [[GUSIScatterer]]>>
+<<Definition of class [[GUSIGatherer]]>>
+
+<<Definition of class [[GUSIRingBuffer]]>>
+
+#if PRAGMA_STRUCT_ALIGN
+#pragma options align=reset
+#endif
+
+<<Inline member functions for class [[GUSIScattGath]]>>
+<<Inline member functions for class [[GUSIRingBuffer]]>>
+#endif /* GUSI_SOURCE */
+
+#endif /* _GUSIBuffer_ */
+@
+
+<<GUSIBuffer.cp>>=
+#include "GUSIInternal.h"
+#include "GUSIBuffer.h"
+
+#include <algorithm>
+#include <stdlib.h>
+#include <Memory.h>
+
+GUSI_USING_STD_NAMESPACE
+
+<<Member functions for class [[GUSIScattGath]]>>
+<<Member functions for class [[GUSIRingBuffer]]>>
+<<Member functions for class [[GUSIRingBuffer::Peeker]]>>
+@
+
+\section{Definition of scattering/gathering}
+
+A [[GUSIScattGath]] translates between an array of [[iovecs]]Êand a simple buffer,
+allocating scratch space if necessary.
+<<Definition of class [[GUSIScattGath]]>>=
+class GUSIScattGath	{
+protected:
+	<<Constructor and destructor for [[GUSIScattGath]]>>
+public:
+	<<Public interface to [[GUSIScattGath]]>>
+private:
+	<<Privatissima of [[GUSIScattGath]]>>
+};
+@ %def GUSIScattGath
+
+On constructing a [[GUSIScattGath]], we pass an array of [[iovecs]]. For the
+simpler functions, a variant with a single [[buffer]] and [[length]] is also
+available.
+<<Constructor and destructor for [[GUSIScattGath]]>>=
+GUSIScattGath(const iovec *iov, int count, bool gather);
+GUSIScattGath(void * buffer, size_t length, bool gather);
+virtual ~GUSIScattGath();
+@ %def GUSIScattGath::GUSIScattGath GUSIScattGath::~GUSIScattGath
+
+The [[iovec]], the buffer and its length are then available for public scrutinity.
+Copy constructor and assignment both are a bit nontrivial.
+<<Public interface to [[GUSIScattGath]]>>=
+const iovec *	IOVec()  const;
+int				Count()  const;
+void *			Buffer() const;
+operator 		void *() const;
+int				Length() const;
+int				SetLength(int len) const;
+void			operator=(const GUSIScattGath & other);
+GUSIScattGath(const GUSIScattGath & other);
+@ %def GUSIScattGath::IOVec GUSIScattGath::Count GUSIScattGath::Buffer GUSIScattGath::Length GUSIScattGath::SetLength
+
+A [[GUSIScatterer]] distributes the contents of a buffer over an array of
+[[iovecs]].
+<<Definition of class [[GUSIScatterer]]>>=
+class GUSIScatterer : public GUSIScattGath {
+public:
+	GUSIScatterer(const iovec *iov, int count) 
+		: GUSIScattGath(iov, count, false) {}
+	GUSIScatterer(void * buffer, size_t length) 
+		: GUSIScattGath(buffer, length, false) {}
+		
+	GUSIScatterer & operator=(const GUSIScatterer & other)
+		{ *static_cast<GUSIScattGath *>(this) = other; return *this; }
+};
+@ %def GUSIScatterer
+
+A [[GUSIGatherer]] collects the contents of an array of [[iovecs]] into a single
+buffer.
+<<Definition of class [[GUSIGatherer]]>>=
+class GUSIGatherer : public GUSIScattGath {
+public:
+	GUSIGatherer(const struct iovec *iov, int count)
+		: GUSIScattGath(iov, count, true) {}
+	GUSIGatherer(const void * buffer, size_t length)
+		: GUSIScattGath(const_cast<void *>(buffer), length, true) {}
+		
+	GUSIGatherer & operator=(const GUSIGatherer & other)
+		{ *static_cast<GUSIScattGath *>(this) = other; return *this; }
+};
+@ %def GUSIGatherer
+
+\section{Definition of ring buffering}
+
+A [[GUSIRingBuffer]] typically has on one side a non-preeemptive piece of code
+and on the other side a piece of interrupt code. To transfer data from and to
+the buffer, two interfaces are available: A direct interface that transfers 
+memory, and an indirect interface that allocates memory regions and then
+has OS routines transfer data from or to them
+<<Definition of class [[GUSIRingBuffer]]>>=
+class GUSIRingBuffer {
+public:
+	<<Constructor and destructor for [[GUSIRingBuffer]]>>
+	<<Direct interface for [[GUSIRingBuffer]]>>
+	<<Indirect interface for [[GUSIRingBuffer]]>>
+	<<Synchronization support for [[GUSIRingBuffer]]>>
+	<<Buffer switching for [[GUSIRingBuffer]]>>
+	<<Definition of class [[GUSIRingBuffer::Peeker]]>>
+private:
+	<<Privatissima of [[GUSIRingBuffer]]>>
+};
+@ %def GUSIRingBuffer
+
+On construction of a [[GUSIRingBuffer]], a buffer of the specified size is 
+allocated and not released until destruction. [[operator void*]] may be used
+to determine whether construction was successful.
+<<Constructor and destructor for [[GUSIRingBuffer]]>>=
+GUSIRingBuffer(size_t bufsiz);
+~GUSIRingBuffer();
+operator void*();
+@ %def GUSIRingBuffer::GUSIRingBuffer GUSIRingBuffer::~GUSIRingBuffer
+
+The direct interface to [[GUSIRingBuffer]] is straightforward: [[Produce]] copies
+memory into the buffer, [[Consume]]Êcopies memory from the buffer, [[Free]]
+determines how much space there is for [[Produce]]Êand [[Valid]]Êdetermines
+how much space there is for [[Consume]].
+<<Direct interface for [[GUSIRingBuffer]]>>=
+void	Produce(void * from, size_t & len);
+void 	Produce(const GUSIGatherer & gather, size_t & len, size_t & offset);
+void 	Produce(const GUSIGatherer & gather, size_t & len);
+void	Consume(void * to, size_t & len);
+void 	Consume(const GUSIScatterer & scatter, size_t & len, size_t & offset);
+void 	Consume(const GUSIScatterer & scatter, size_t & len);
+size_t	Free();	
+size_t	Valid();
+@ %def GUSIRingBuffer::Produce GUSIRingBuffer::Consume GUSIRingBuffer::Free GUSIRingBuffer::Valid
+
+[[ProduceBuffer]]Êtries to find in the ring buffer a contiguous free block of
+memory of the specified size [[len]] or otherwise the biggest available free 
+block, returns a pointer to it and sets [[len]] to its length. [[ValidBuffer]]
+specifies that the next [[len]]Êbytes of the ring buffer now contain valid data.
+
+[[ConsumeBuffer]] returns a pointer to the next valid byte and sets [[len]] to 
+the minimum of the number of contiguous valid bytes and the value of len on 
+entry. [[FreeBuffer]] specifies that the next [[len]] bytes of the ring 
+buffer were consumed and are no longer needed.
+<<Indirect interface for [[GUSIRingBuffer]]>>=
+void *	ProduceBuffer(size_t & len);
+void *	ConsumeBuffer(size_t & len);
+void	ValidBuffer(void * buffer, size_t len);
+void 	FreeBuffer(void * buffer, size_t len);
+@ %def GUSIRingBuffer::ProduceBuffer GUSIRingBuffer::ConsumeBuffer GUSIRingBuffer::ValidBuffer GUSIRingBuffer::FreeBuffer
+
+Before the nonpreemptive partner changes any of the buffer's data structures,
+the [[GUSIRingBuffer]]Êmember functions call [[Lock]], and after the change is
+complete, they call [[Release]]. An interrupt level piece of code before 
+changing any data structures has to determine whether the buffer is locked by
+calling [[Locked]]. If the buffer is locked or otherwise in an unsuitable state,
+the code can specify a procedure to be called during the next [[Release]] by 
+calling [[Defer]]. A deferred procedure should call [[ClearDefer]] to avoid
+getting activated again at the next opportunity.
+<<Synchronization support for [[GUSIRingBuffer]]>>=
+void 		Lock();
+void 		Release();
+bool		Locked();
+typedef void (*Deferred)(void *);
+void		Defer(Deferred def, void * ar);
+void		ClearDefer();
+@ %def GUSIRingBuffer::Lock GUSIRingBuffer::Release GUSIRingBuffer::Deferred GUSIRingBuffer::Defer
+
+It is possible to switch buffer sizes during the existence of a buffer, but we
+have to be somewhat careful, since some asynchronous call may still be writing
+into the old buffer. [[PurgeBuffers]], called at safe times, cleans up old
+buffers.
+<<Buffer switching for [[GUSIRingBuffer]]>>=
+void		SwitchBuffer(size_t bufsiz);
+size_t		Size();
+void		PurgeBuffers();
+@ %def GUSIRingBuffer::SwitchBuffer
+
+Sometimes, it's necessary to do nondestructive reads, a task complex enough to
+warrant its own class.
+<<Definition of class [[GUSIRingBuffer::Peeker]]>>=
+class Peeker {
+public:
+	Peeker(GUSIRingBuffer & buffer);
+	~Peeker();
+	
+	void	Peek(void * to, size_t & len);
+	void 	Peek(const GUSIScatterer & scatter, size_t & len);
+private:
+	<<Privatissima of [[GUSIRingBuffer::Peeker]]>>
+};
+friend class Peeker;
+
+void	Peek(void * to, size_t & len);
+void 	Peek(const GUSIScatterer & scatter, size_t & len);
+@ %def GUSIRingBuffer::Peeker
+ 
+\section{Implementation of scattering/gathering}
+
+A [[GUSIScattGath]]Êalways consists of [[fIo]], an array of [[iovecs]], [[fCount]],
+the number of sections in the array, and [[fLen]], the total size of the data area.
+If [[fCount]] is 1, [[fBuf]]Êwill be a copy of the pointer to the single section. If 
+[[fCount]] is greater than 1, [[fScratch]] will contain a [[Handle]] to a scratch 
+area of size [[len]] and [[fBuf]] will contain [[*scratch]]. If the object was
+constructed without providing an [[iovec]] array, [[fTrivialIo]] will be set up
+to hold one.
+<<Privatissima of [[GUSIScattGath]]>>=
+const iovec *	fIo;
+iovec			fTrivialIo;		
+mutable int		fCount;
+mutable Handle	fScratch;
+mutable void *	fBuf;
+mutable int		fLen;
+bool			fGather;
+@ %def GUSIScattGath::fIo GUSIScattGath::fCount GUSIScattGath::fScratch 
+@ %def GUSIScattGath::fBuf GUSIScattGath::fLen GUSIScattGath::fGather
+
+Clients need readonly access to the buffer address and read/write access to the length.
+[[operator void*]]Êserver to check whether the [[GUSIScattGath]]Êwas constructed 
+successfully.
+<<Inline member functions for class [[GUSIScattGath]]>>=
+inline const iovec * GUSIScattGath::IOVec()	 const		
+	{	return	fIo;		}
+inline int			 GUSIScattGath::Count()	 const		
+	{	return	fCount;		}
+inline               GUSIScattGath::operator  void *() const
+	{	return	Buffer();	}
+inline int			 GUSIScattGath::Length() const		
+	{	return	fLen;		}
+inline int			 GUSIScattGath::SetLength(int len) const
+	{	return	GUSI_MUTABLE(GUSIScattGath, fLen) = len;	}
+@
+
+The constructor of [[GUSIScattGath]]Êdoes a case distinction between an empty
+IO vector, a vector with only one element, and a vector with several elements.
+<<Member functions for class [[GUSIScattGath]]>>=
+GUSIScattGath::GUSIScattGath(const iovec *iov, int cnt, bool gather)
+	:	fIo(iov), fCount(cnt), fScratch(nil), fGather(gather)
+{
+	if (fCount < 1)	{
+		<<[[GUSIScattGath]] constructed with empty IO vector>>
+	} else if (fCount == 1)	{	
+		<<[[GUSIScattGath]] constructed with contiguous IO vector>>
+	} else {
+		<<[[GUSIScattGath]] constructed with sparse IO vector>>
+	}
+}
+@
+
+The first two cases are obvious.
+<<[[GUSIScattGath]] constructed with empty IO vector>>=
+fBuf	=	nil;
+fLen	=	0;
+<<[[GUSIScattGath]] constructed with contiguous IO vector>>=
+fBuf	=	(void *) iov->iov_base;
+fLen	=	(int)	iov->iov_len;
+@
+
+Only the third case is of any interest. We construct a scratch area. Note that
+[[cnt]] and [[iov]] are used; we don't want to alter the member fields. Since 
+[[GUSIScattGath]] usually persist only for short times, [[fScratch]]Êis allocated 
+as a locked handle rather than a pointer.
+<<[[GUSIScattGath]] constructed with sparse IO vector>>=
+fBuf     = nil;
+for (fLen = 0; cnt--; ++iov)
+	fLen += (int) iov->iov_len;
+@
+
+The backwards compatible constructor of [[GUSIScattGath]] uses the [[fTrivialIo]]
+field to simulate the [[iovec]] array.
+<<Member functions for class [[GUSIScattGath]]>>=
+GUSIScattGath::GUSIScattGath(void * buffer, size_t length, bool gather)
+	:	fIo(&fTrivialIo), fCount(1), fScratch(nil), fGather(gather)
+{
+	fTrivialIo.iov_base = static_cast<caddr_t>(fBuf = buffer);
+	fTrivialIo.iov_len	= fLen = length;
+}
+@
+
+A call to [[Buffer]] is an indication that the caller prefers for the data to
+be contiguous, so we allocate a scratch buffer and gather, if necessary.
+<<Member functions for class [[GUSIScattGath]]>>=
+void * GUSIScattGath::Buffer() const
+{
+	if (!fScratch && fCount > 1) {
+		if (GUSI_MUTABLE(GUSIScattGath, fScratch) = NewHandle(fLen))	{
+			HLock(fScratch);
+			GUSI_MUTABLE(GUSIScattGath, fBuf)	=	(void *) *fScratch;
+			if (fGather) {
+				<<Gather [[fIo]] contents in [[fBuf]]>>
+			}
+		} else {
+			GUSI_MUTABLE(GUSIScattGath, fCount)	= 	0;
+			GUSI_MUTABLE(GUSIScattGath, fBuf) 	=	nil;
+		}
+	}
+	
+	return fBuf;
+}
+@
+
+The destructor of [[GUSIScattGath]]Êgets rid of the scratch area if one was 
+allocated. If it works in scatter mode, the data is first scattered.
+<<Member functions for class [[GUSIScattGath]]>>=
+GUSIScattGath::~GUSIScattGath()
+{
+	if (fScratch) {
+		if (!fGather) {
+			<<Scatter [[fBuf]] contents to [[fIo]]>>
+		}
+		DisposeHandle(fScratch);
+	}
+}
+@
+
+The copy constructor and the assignment operator both have to ensure that the
+two objects don't end up sharing the same scratch area.
+<<Member functions for class [[GUSIScattGath]]>>=
+void GUSIScattGath::operator=(const GUSIScattGath & other)
+{
+	if (fScratch)
+		DisposeHandle(fScratch);
+	<<Copy uncontroversial fields of [[GUSIScattGath]]>>
+	<<Copy [[fBuf]] unless it points to a scratch area>>
+}
+
+GUSIScattGath::GUSIScattGath(const GUSIScattGath & other)
+{
+	<<Copy uncontroversial fields of [[GUSIScattGath]]>>
+	<<Copy [[fBuf]] unless it points to a scratch area>>
+}
+@
+
+<<Copy uncontroversial fields of [[GUSIScattGath]]>>=
+fIo 	= other.fIo;
+fCount	= other.fCount;
+fLen	= other.fLen;
+fGather = other.fGather;
+@
+
+<<Copy [[fBuf]] unless it points to a scratch area>>=
+fScratch = nil;
+fBuf 	 = other.fScratch ? nil : other.fBuf;
+@
+
+<<Gather [[fIo]] contents in [[fBuf]]>>=
+char *			buffer = static_cast<char *>(fBuf);
+const iovec *	io 	   = fIo;
+for (int count = fCount; count--; ++io)	{
+	memcpy(buffer, io->iov_base, io->iov_len);
+	
+	buffer	+=	io->iov_len;
+}
+@
+
+<<Scatter [[fBuf]] contents to [[fIo]]>>=
+char *			buffer = static_cast<char *>(fBuf);
+const iovec *	io 	   = fIo;
+int				length = fLen;
+for (int count = fCount; count-- && length; ++io)	{
+	int sect = min(length, int(io->iov_len));
+	
+	memcpy(io->iov_base, buffer, sect);
+	
+	buffer	+=	sect;
+	length 	-=	sect;
+}
+@
+
+\section{Implementation of ring buffering}
+
+The buffer area of a ring buffer extends between [[fBuffer]]Êand [[fEnd]]. [[fValid]] 
+contains the number of valid bytes, while [[fFree]] and [[fSpare]]Ê(Whose purpose
+will be explained later) sum up to the number of free bytes. [[fProduce]]Êpoints at the 
+next free byte, while [[fConsume]]Êpoints at the next valid byte. [[fInUse]] 
+indicates that an asynchronous call might be writing into the buffer.
+<<Privatissima of [[GUSIRingBuffer]]>>=
+Ptr		fBuffer;
+Ptr		fEnd;
+Ptr 	fConsume;
+Ptr		fProduce;
+size_t	fFree;
+size_t	fValid;
+size_t	fSpare;
+bool	fInUse;
+@ %def GUSIRingBuffer::fBuffer GUSIRingBuffer::fEnd GUSIRingBuffer::fConsume GUSIRingBuffer::fProduce GUSIRingBuffer::fFree GUSIRingBuffer::fValid GUSIRingBuffer::fSpare
+<<Initialize buffer of [[GUSIRingBuffer]]>>=
+fBuffer			=	fConsume	=	fProduce	=	bufsiz ? NewPtr(bufsiz) : 0;
+fEnd			=	fBuffer+bufsiz;
+
+fValid			=	fSpare		=	0;
+fFree			=	bufsiz;
+<<Initialize fields of [[GUSIRingBuffer]]>>=
+fInUse			=	false;
+@
+
+The relationships between the various pointers are captured by [[Invariant]] which
+uses the auxiliary function [[Distance]] to determine the distance between two
+pointers in the presence of wrap around areas.
+<<Privatissima of [[GUSIRingBuffer]]>>=
+bool	Invariant();
+size_t	Distance(Ptr from, Ptr to);
+@ %def GUSIRingBuffer::Invariant GUSIRingBuffer::Distance
+
+<<Member functions for class [[GUSIRingBuffer]]>>=
+size_t GUSIRingBuffer::Distance(Ptr from, Ptr to)
+{
+	if (from > to)
+		return (fEnd - from) + (to - fBuffer);
+	else
+		return to-from;	
+}
+@
+
+<<Member functions for class [[GUSIRingBuffer]]>>=
+bool GUSIRingBuffer::Invariant()
+{
+	Lock();
+		
+	bool invariant = 
+		GUSI_CASSERT_INTERNAL(fProduce >= fBuffer && fProduce < fEnd)
+	 &&	GUSI_CASSERT_INTERNAL(fConsume >= fBuffer && fConsume < fEnd)
+	 &&	GUSI_CASSERT_INTERNAL(fFree + fValid + fSpare == fEnd - fBuffer)
+	 &&	GUSI_CASSERT_INTERNAL(Distance(fConsume, fProduce) == (fValid + fSpare) % (fEnd - fBuffer))
+	 &&	GUSI_CASSERT_INTERNAL(Distance(fProduce, fConsume) == fFree % (fEnd - fBuffer));
+
+	Release();
+	
+	return invariant;
+}
+@
+
+The lock mechanism relies on [[fLocked]], and the deferred procedure and its argument
+are stored in [[fDeferred]] and [[fDeferredArg]].
+<<Privatissima of [[GUSIRingBuffer]]>>=
+int			fLocked;
+Deferred	fDeferred;
+void *		fDeferredArg;
+@ %def GUSIRingBuffer::fLocked GUSIRingBuffer::fDeferred GUSIRingBuffer::fDeferredArg
+<<Initialize fields of [[GUSIRingBuffer]]>>=
+fLocked			=	0;
+fDeferred		=	nil;
+fDeferredArg	=	nil;
+@
+
+The constructor initializes everything.
+<<Member functions for class [[GUSIRingBuffer]]>>=
+GUSIRingBuffer::GUSIRingBuffer(size_t bufsiz)
+{
+	<<Initialize buffer of [[GUSIRingBuffer]]>>
+	<<Initialize fields of [[GUSIRingBuffer]]>>	
+	
+	GUSI_SASSERT_INTERNAL(
+		Invariant(), "Invariant violated in GUSIRingBuffer::GUSIRingBuffer()!\n");
+}
+@
+
+We only switch the next time the buffer is empty, so we are prepared to create
+the new buffer dynamically and forward requests to it for a while.
+<<Privatissima of [[GUSIRingBuffer]]>>=
+GUSIRingBuffer * 	fNewBuffer;
+GUSIRingBuffer * 	fOldBuffer;
+void 				ObsoleteBuffer();
+@ %def GUSIRingBuffer::fNewBuffer GUSIRingBuffer::fOldBuffer
+<<Initialize fields of [[GUSIRingBuffer]]>>=
+fNewBuffer	=	nil;
+fOldBuffer	=	nil;
+<<Member functions for class [[GUSIRingBuffer]]>>=
+void GUSIRingBuffer::SwitchBuffer(size_t bufsiz)
+{
+	PurgeBuffers();
+	Lock();
+	if (fNewBuffer)
+		fNewBuffer->SwitchBuffer(bufsiz);
+	else if (bufsiz == fEnd-fBuffer)		// No change
+		return;
+	else if (!fInUse && !fValid) {
+		if (fBuffer)
+			DisposePtr(fBuffer);
+		<<Initialize buffer of [[GUSIRingBuffer]]>>
+	} else 
+		fNewBuffer = new GUSIRingBuffer(bufsiz);
+	Release();
+}
+void GUSIRingBuffer::PurgeBuffers()
+{
+	if (fOldBuffer) {
+		delete fOldBuffer;
+		
+		fOldBuffer = nil;
+	}
+}
+@
+
+[[ObsoleteBuffer]] swaps the data structures of [[fNewBuffer]] and the current
+buffer and finally prepends [[fNewBuffer]] to [[fOldBuffer]].
+<<Member functions for class [[GUSIRingBuffer]]>>=
+void GUSIRingBuffer::ObsoleteBuffer()
+{
+	Ptr oldBuffer = fBuffer;
+	fBuffer 		= fNewBuffer->fBuffer;
+	fEnd	 		= fNewBuffer->fEnd;
+	fConsume 		= fNewBuffer->fConsume;
+	fProduce 		= fNewBuffer->fProduce;
+	fFree 			= fNewBuffer->fFree;
+	fValid 			= fNewBuffer->fValid;
+	fSpare 			= fNewBuffer->fSpare;
+	fInUse 			= fNewBuffer->fInUse;
+	fNewBuffer->fOldBuffer  = fOldBuffer;
+	fOldBuffer		= fNewBuffer;
+	fNewBuffer		= fOldBuffer->fNewBuffer;
+	fOldBuffer->fBuffer		= oldBuffer;
+	fOldBuffer->fNewBuffer	= nil;
+}
+@
+
+The destructor cleans up deferred procedures and allocated memory.
+<<Member functions for class [[GUSIRingBuffer]]>>=
+GUSIRingBuffer::~GUSIRingBuffer()
+{
+	Lock();
+	Release();
+	if (fBuffer)
+		DisposePtr(fBuffer);
+	PurgeBuffers();
+	if (fNewBuffer)
+		delete fNewBuffer;
+}
+@
+
+Since the direct interface is built on the indirect interface, we deal with the latter 
+first. [[ProduceBuffer]]Êis the most complicated member function, as it has the most
+freedom in how to do its job.
+<<Member functions for class [[GUSIRingBuffer]]>>=
+void * GUSIRingBuffer::ProduceBuffer(size_t & len)
+{
+	Lock();
+	<<Forward [[ProduceBuffer]] to [[fNewBuffer]]>>
+	size_t	requested_length	=	len;
+
+	<<Reset pointers if [[GUSIRingBuffer]] is empty>>	
+	<<Calculate the size of a free block in [[GUSIRingBuffer]] and adjust [[len]]>>
+	GUSI_SASSERT_INTERNAL(
+		Invariant(), "Invariant violated in GUSIRingBuffer::ProduceBuffer()!\n");
+	GUSI_CASSERT_INTERNAL(len <= requested_length);
+	void *	result 	= fProduce;
+	fInUse		= true;
+	Release();
+	return result;
+}
+@
+
+If a new buffer exists, [[ProduceBuffer]] requests get directed there.
+<<Forward [[ProduceBuffer]] to [[fNewBuffer]]>>=
+while (fNewBuffer) {
+	if (!fValid)
+		ObsoleteBuffer();
+	else {
+		void * buf = fNewBuffer->ProduceBuffer(len);
+		Release();
+		return buf;
+	}
+}
+@
+
+At the core of [[ProduceBuffer]] is the code to calculate the best possible free block
+in [[streak]] and adjust [[len]].
+<<Calculate the size of a free block in [[GUSIRingBuffer]] and adjust [[len]]>>=
+size_t	streak	=	fEnd - fProduce;
+if (streak >= fFree)
+	streak = fFree;
+else 
+	<<Avoid silly windows in [[GUSIRingBuffer]]>>
+if (len > streak)
+	len	= streak;
+@
+
+To keep free space as contiguous as possible, we reset the production and consumption
+pointers whenever the buffer becomes empty. Since this code is only called from 
+[[ProduceBuffer]], we know that there is no outstanding data producing call. This
+is also a good opportunity to switch buffers.
+<<Reset pointers if [[GUSIRingBuffer]] is empty>>=
+if (!fValid) {
+	fProduce 	= 	fConsume = fBuffer;
+	fSpare   	= 	0;
+	fFree		=	fEnd - fBuffer;
+}
+@
+
+Now we turn to the secret of [[fSpare]]: If a large produce buffer is asked for, the free
+area wraps around, and most of the free area is at the beginning of the buffer, [[fProduce]]
+skips the rest of the buffer and the number of skipped bytes is noted in [[fSpare]] so 
+[[fConsume]] will skip them later, too.
+<<Avoid silly windows in [[GUSIRingBuffer]]>>=
+if (streak < (fFree >> 1) && streak < len) {
+	fSpare 		=	streak;
+	fProduce	=	fBuffer;
+	fFree		-=	fSpare;
+	streak		=	fFree;
+}
+@
+
+Compared to [[ProduceBuffer]], [[ConsumeBuffer]]Êis quite simple as we don't have the 
+option of skipping anything.
+<<Member functions for class [[GUSIRingBuffer]]>>=
+void * GUSIRingBuffer::ConsumeBuffer(size_t & len)
+{
+	Lock();
+	size_t	requested_length	=	len;
+	<<[[ObsoleteBuffer]] if possible>>
+	size_t	streak	=	fEnd - fConsume - fSpare;
+	if (streak > fValid)
+		streak = fValid;
+	if (len > streak)
+		len	=	streak;
+	GUSI_SASSERT_INTERNAL(
+		Invariant(), "Invariant violated in GUSIRingBuffer::ConsumeBuffer()!\n");
+	GUSI_CASSERT_INTERNAL(len <= requested_length);
+	void *	result = fConsume;
+	Release();
+	return result;
+}
+@
+
+At this point, empty buffers can be thrown away unless they are in use
+<<[[ObsoleteBuffer]] if possible>>=
+while (fNewBuffer && !fValid && !fInUse)
+	ObsoleteBuffer();
+@
+
+[[ValidBuffer]] concludes an action started by [[ProduceBuffer]]Êby advancing [[fProduce]].
+<<Member functions for class [[GUSIRingBuffer]]>>=
+void GUSIRingBuffer::ValidBuffer(void * buffer, size_t len)
+{
+	Lock();
+	if (fNewBuffer && (buffer < fBuffer || buffer >= fEnd)) {
+		fNewBuffer->ValidBuffer(buffer, len);
+		Release();
+		return;
+	}
+	GUSI_CASSERT_INTERNAL(len <= fFree);
+	GUSI_CASSERT_INTERNAL(fProduce + len <= fEnd);
+	fInUse		=	false;
+	fValid 		+= 	len;
+	fFree		-=	len;
+	fProduce	+=	len;
+	if (fProduce == fEnd)
+		fProduce	=	fBuffer;
+	<<[[ObsoleteBuffer]] if possible>>
+	GUSI_SASSERT_INTERNAL(
+		Invariant(), "Invariant violated in GUSIRingBuffer::ValidBuffer()!\n");
+	Release();
+}
+@
+
+[[FreeBuffer]] concludes an action started by [[ConsumeBuffer]]Êby advancing [[fConsume]].
+<<Member functions for class [[GUSIRingBuffer]]>>=
+void GUSIRingBuffer::FreeBuffer(void *, size_t len)
+{
+	Lock();
+	fFree 		+=	len;
+	fValid		-=	len;
+	fConsume	+=	len;
+	
+	if (fConsume == fEnd-fSpare) {
+		fConsume	=	fBuffer;
+		fFree		+=	fSpare;
+		fSpare		=	0;
+	}
+	<<[[ObsoleteBuffer]] if possible>>
+	GUSI_SASSERT_INTERNAL(
+		Invariant(), "Invariant violated in GUSIRingBuffer::FreeBuffer()!\n");
+	Release();
+}
+@
+
+Now for the direct interface. [[Produce]] combines [[ProduceBuffer]]Êwith [[ValidBuffer]].
+<<Member functions for class [[GUSIRingBuffer]]>>=
+void GUSIRingBuffer::Produce(void * from, size_t & len)
+{
+	size_t	part;
+	size_t	rest;
+	void *	buf;
+	
+	PurgeBuffers();
+	for (rest = len; (part = rest) && fFree; rest -= part)	{
+		buf	=	ProduceBuffer(part);
+		BlockMoveData(from, buf, part);
+		ValidBuffer(buf, part);
+		
+		from	= static_cast<char *>(from)+part;
+	}
+	len	-=	rest;
+	GUSI_SASSERT_INTERNAL(
+		Invariant(), "Invariant violated in GUSIRingBuffer::Produce()!\n");
+}
+@
+
+[[Consume]] combines [[ConsumeBuffer]]Êwith [[FreeBuffer]].
+<<Member functions for class [[GUSIRingBuffer]]>>=
+void GUSIRingBuffer::Consume(void * to, size_t & len)
+{
+	size_t	part;
+	size_t	rest;
+	void *	buf;
+	
+	PurgeBuffers();
+	for (rest = len; (part = rest) && fValid; rest -= part)	{
+		buf	= ConsumeBuffer(part);
+		if (to) {
+			BlockMoveData(buf, to, part);
+			to	= static_cast<char *>(to)+part;
+		}
+		FreeBuffer(buf, part);
+	}
+	
+	len	-=	rest;
+	GUSI_SASSERT_INTERNAL(
+		Invariant(), "Invariant violated in GUSIRingBuffer::Consume()!\n");
+}
+@
+
+The scatter/gather variants of [[Produce]] and [[Consume]] rely on a common
+strategy.
+<<Privatissima of [[GUSIRingBuffer]]>>=
+void IterateIOVec(const GUSIScattGath & sg, size_t & len, size_t & offset, bool produce);
+<<Member functions for class [[GUSIRingBuffer]]>>=
+void GUSIRingBuffer::IterateIOVec(
+	const GUSIScattGath & sg, size_t & len, size_t & offset, bool produce)
+{
+	const iovec *	vec = sg.IOVec();
+	iovec 			io  = vec[0];
+
+	if (!len)	// Surprising as it is, nobody notices this any sooner
+		return;	
+	
+	Lock();
+	<<Skip [[offset]] bytes from beginning of [[vec]]>>
+	size_t part;
+	size_t rest = len;
+	while (part = min(rest, io.iov_len)) {
+		size_t donepart = part;
+		if (produce)
+			Produce(io.iov_base, donepart);
+		else
+			Consume(io.iov_base, donepart);
+		rest   -= donepart;
+		if (donepart != part)
+			break;
+		do {
+			io = *++vec;
+		} while (!io.iov_len);
+	}
+	len 	-= rest;
+	offset	+= len;
+	Release();
+}
+@
+
+<<Skip [[offset]] bytes from beginning of [[vec]]>>=
+size_t		off = offset;
+
+while (off >= io.iov_len) {
+	off -= io.iov_len;
+	do {
+		io = *++vec;
+	} while (!io.iov_len);
+}
+io.iov_base	= static_cast<char *>(io.iov_base)+off;
+io.iov_len  = io.iov_len-off;
+@
+
+<<Inline member functions for class [[GUSIRingBuffer]]>>=
+inline void GUSIRingBuffer::Produce(const GUSIGatherer & gather, size_t & len, size_t & offset)
+{
+	IterateIOVec(gather, len, offset, true);
+}
+
+inline void GUSIRingBuffer::Consume(const GUSIScatterer & scatter, size_t & len, size_t & offset)
+{
+	IterateIOVec(scatter, len, offset, false);
+}
+
+inline void GUSIRingBuffer::Produce(const GUSIGatherer & gather, size_t & len)
+{
+	size_t offset = 0;
+	
+	IterateIOVec(gather, len, offset, true);
+}
+
+inline void GUSIRingBuffer::Consume(const GUSIScatterer & scatter, size_t & len)
+{
+	size_t offset = 0;
+	
+	IterateIOVec(scatter, len, offset, false);
+}
+@
+
+[[Free]] returns the free buffer space of the most recent buffer.
+<<Member functions for class [[GUSIRingBuffer]]>>=
+size_t GUSIRingBuffer::Free()		
+{ 
+	if (fNewBuffer)
+		return fNewBuffer->Free();
+	else
+		return fFree;		
+}	
+@
+
+[[Free]] returns the sum of the valid bytes of all buffers.
+<<Member functions for class [[GUSIRingBuffer]]>>=
+size_t GUSIRingBuffer::Valid()
+{ 
+	if (fNewBuffer)
+		return fNewBuffer->Valid()+fValid;
+	else
+		return fValid;		
+}	
+@
+
+The lock support is rather straightforward.
+<<Inline member functions for class [[GUSIRingBuffer]]>>=
+inline void 	GUSIRingBuffer::Lock()			{ 	++fLocked;				}
+inline bool		GUSIRingBuffer::Locked()		{	return (fLocked!=0);	}
+inline void		GUSIRingBuffer::ClearDefer()	{	fDeferred	=	nil;	}
+inline void 	GUSIRingBuffer::Release()		
+{ 
+	GUSI_CASSERT_INTERNAL(fLocked > 0);
+	if (--fLocked <= 0 && fDeferred)
+		fDeferred(fDeferredArg);
+}
+inline void		GUSIRingBuffer::Defer(Deferred def, void * ar)
+{
+	fDeferred 		= 	def;
+	fDeferredArg	=	ar;
+}
+@
+
+The size is stored only implicitely.
+<<Inline member functions for class [[GUSIRingBuffer]]>>=
+inline size_t GUSIRingBuffer::Size()				{	return fEnd - fBuffer;	}
+@
+
+A [[GUSIRingBuffer::Peeker]] has to keep its associated [[GUSIRingBuffer]] locked during
+its entire existence.
+<<Privatissima of [[GUSIRingBuffer::Peeker]]>>=
+GUSIRingBuffer &	fTopBuffer;
+GUSIRingBuffer *	fCurBuffer;
+Ptr					fPeek;
+<<Member functions for class [[GUSIRingBuffer::Peeker]]>>=
+GUSIRingBuffer::Peeker::Peeker(GUSIRingBuffer & buffer)
+ : fTopBuffer(buffer)
+{
+	fTopBuffer.Lock();
+	for (fCurBuffer = &fTopBuffer; fCurBuffer && !fCurBuffer->fValid; )
+		fCurBuffer = fCurBuffer->fNewBuffer;
+	if (fCurBuffer)
+		fPeek = fCurBuffer->fConsume;
+}
+GUSIRingBuffer::Peeker::~Peeker()
+{
+	fTopBuffer.Release();
+}
+@
+
+The core routine for reading is [[PeekBuffer]] which automatically advances the
+peeker as well.
+<<Privatissima of [[GUSIRingBuffer::Peeker]]>>=
+void *	PeekBuffer(size_t & len);
+<<Member functions for class [[GUSIRingBuffer::Peeker]]>>=
+void *	GUSIRingBuffer::Peeker::PeekBuffer(size_t & len)
+{
+	size_t	streak;
+	
+	if (!fCurBuffer)
+		return nil;
+		
+	if (fPeek < fCurBuffer->fConsume)
+		streak = fCurBuffer->fConsume - fPeek;
+	else
+		streak = fCurBuffer->fEnd - fPeek - fCurBuffer->fSpare;
+	if (streak > fCurBuffer->fValid)
+		streak = fCurBuffer->fValid;
+	if (len > streak)
+		len	=	streak;
+	void *	result = fPeek;
+	<<Advance [[fPeek]] by [[len]]>>
+	
+	return result;
+}
+@
+
+<<Advance [[fPeek]] by [[len]]>>=
+fPeek	+=	len;
+if (fPeek == fCurBuffer->fEnd-fCurBuffer->fSpare)
+	fPeek = fCurBuffer->fBuffer;
+if (fPeek == fCurBuffer->fConsume) {
+	while ((fCurBuffer = fCurBuffer->fNewBuffer) && !fCurBuffer->fValid)
+		;
+	if (fCurBuffer)
+		fPeek = fCurBuffer->fConsume;
+}
+@
+
+The implementation of [[Peek]] itself is then fairly simple.
+<<Member functions for class [[GUSIRingBuffer::Peeker]]>>=
+void GUSIRingBuffer::Peeker::Peek(void * to, size_t & len)
+{
+	size_t	part;
+	size_t	rest;
+	void *	buf;
+	
+	for (rest = len; (part = rest) && (buf = PeekBuffer(part)); rest -= part) {
+		BlockMoveData(buf, to, part);
+		to	= static_cast<char *>(to)+part;
+	}
+	
+	len	-=	rest;
+}
+@
+
+<<Member functions for class [[GUSIRingBuffer::Peeker]]>>=
+void GUSIRingBuffer::Peeker::Peek(const GUSIScatterer & scatter, size_t & len)
+{
+	const iovec *	vec = scatter.IOVec();
+	iovec 			io  = vec[0];
+
+	while (!io.iov_len)
+		io = *++vec;
+
+	size_t part;
+	size_t rest = len;
+	while (part = min(rest, io.iov_len)) {
+		size_t donepart = part;
+		Peek(io.iov_base, donepart);
+		rest   -= donepart;
+		if (donepart != part)
+			break;
+		do {
+			io = *++vec;
+		} while (!io.iov_len);
+	}
+	len 	-= rest;
+}
+@
+
+<<Inline member functions for class [[GUSIRingBuffer]]>>=
+inline void GUSIRingBuffer::Peek(void * to, size_t & len)
+{
+	Peeker	peeker(*this);
+	
+	peeker.Peek(to, len);
+}
+
+inline void GUSIRingBuffer::Peek(const GUSIScatterer & scatter, size_t & len)
+{
+	Peeker	peeker(*this);
+	
+	peeker.Peek(scatter, len);
+}
+@
+
