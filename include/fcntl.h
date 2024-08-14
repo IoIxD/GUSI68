@@ -69,9 +69,7 @@
 /* defined by POSIX 1003.1; BSD default, so no bit required */
 #define O_NOCTTY 0 /* don't assign controlling terminal */
 
-#ifndef _POSIX_SOURCE
 #define FNDELAY O_NONBLOCK /* compat */
-#endif
 
 /*
  * Constants used for fcntl(2)

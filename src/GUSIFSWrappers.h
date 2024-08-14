@@ -53,6 +53,8 @@ OSErr GUSIFSCatMove(const FSSpec *spec, long dest);
 
 OSErr GUSIFSXGetVolInfo(GUSIIOPBWrapper<XVolumeParam> *pb);
 
+OSErr GUSIFSOpenDriver(StringPtr name, short *refNum);
+
 #endif
 
 #endif /* GUSI_SOURCE */

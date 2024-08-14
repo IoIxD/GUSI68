@@ -1,4 +1,4 @@
-
+/*
 #include "GUSIInternal.h"
 #include "GUSIMSL.h"
 #include "GUSIDescriptor.h"
@@ -189,3 +189,4 @@ void GUSISetupConsoleStdio()
 	MSLSetupStdio(1, stdout);
 	MSLSetupStdio(2, stderr);
 }
+*/

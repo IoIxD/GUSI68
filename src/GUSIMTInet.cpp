@@ -14,23 +14,23 @@
 
 GUSI_USING_STD_NAMESPACE
 
-
 short GUSIMTInetSocket::Driver()
 {
-	if (sDrvrState == 1) 
-		sDrvrState = GUSIFSOpenDriver("\p.IPP", &sDrvrRefNum);
+	if (sDrvrState == 1)
+		sDrvrState = GUSIFSOpenDriver((unsigned char *)"\p.IPP", &sDrvrRefNum);
 
 	return sDrvrState ? 0 : sDrvrRefNum;
 }
 
 u_long GUSIMTInetSocket::HostAddr()
 {
-	if (!sHostAddress && Driver()) {
-		GUSIIOPBWrapper<GetAddrParamBlock>	ga;
-		
-		ga->ioCRefNum 	= Driver();
-		ga->csCode 		= ipctlGetAddr;
-		
+	if (!sHostAddress && Driver())
+	{
+		GUSIIOPBWrapper<GetAddrParamBlock> ga;
+
+		ga->ioCRefNum = Driver();
+		ga->csCode = ipctlGetAddr;
+
 		if (!ga.Control())
 			sHostAddress = ga->ourAddress;
 	}
@@ -41,8 +41,7 @@ GUSIMTInetSocket::GUSIMTInetSocket()
 	: fStream(nil)
 {
 	memset(&fSockAddr, 0, sizeof(sockaddr_in));
-	fSockAddr.sin_family	= AF_INET;
-	
+	fSockAddr.sin_family = AF_INET;
+
 	fPeerAddr = fSockAddr;
 }
-

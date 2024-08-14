@@ -9,6 +9,7 @@
 #include <stdarg.h>
 
 #include <ConditionalMacros.h>
+#include <Files.h>
 
 #ifdef __MWERKS__
 #define GUSI_COMPILER_HAS_NAMESPACE
@@ -75,7 +76,6 @@ GUSIHook GUSIGetHook(OSType code);
 typedef bool (*GUSISpinFn)(bool wait);
 #define GUSI_SpinHook 'spin'
 
-struct FSSpec;
 typedef bool (*GUSIExecFn)(const FSSpec *file);
 #define GUSI_ExecHook 'exec'
 

@@ -3,6 +3,7 @@
     "system_error": "cpp",
     "algorithm": "cpp",
     "bit": "cpp",
-    "utility": "cpp"
+    "utility": "cpp",
+    "dnr.c": "cpp"
   }
 }
