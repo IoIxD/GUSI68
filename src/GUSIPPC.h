@@ -8,19 +8,23 @@
 #include "GUSIFactory.h"
 #include <sys/ppc.h>
 
-
-class GUSIPPCFactory : public GUSISocketFactory {
+class GUSIPPCFactory : public GUSISocketFactory
+{
 public:
-	static GUSISocketFactory *	Instance();
-	virtual GUSISocket * 		socket(int domain, int type, int protocol);
+	static GUSISocketFactory *Instance();
+	virtual GUSISocket *socket(int domain, int type, int protocol);
+
 private:
-	GUSIPPCFactory()				{}
-	static GUSISocketFactory *	sInstance;
+	GUSIPPCFactory() {}
+	static GUSISocketFactory *sInstance;
 };
 
-
-#warning: unhandled macro "definitions[mat]"
-
+inline GUSISocketFactory *GUSIPPCFactory::Instance()
+{
+	if (!sInstance)
+		sInstance = new GUSIPPCFactory;
+	return sInstance;
+}
 #endif /* GUSI_INTERNAL */
 
 #endif /* _GUSIPPC_ */

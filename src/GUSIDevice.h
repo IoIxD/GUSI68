@@ -13,210 +13,229 @@
 #include <ConditionalMacros.h>
 
 #if PRAGMA_STRUCT_ALIGN
-#pragma options align=native
+#pragma options align = native
 #endif
-
 
 class GUSIDevice;
 
-class GUSIFileToken : public GUSIFileSpec {
+class GUSIFileToken : public GUSIFileSpec
+{
 public:
-	enum Request {
-		
-kWillOpen,
+	enum Request
+	{
 
-kWillRemove,
+		kWillOpen,
 
-kWillRename,
+		kWillRemove,
 
-kWillStat,
+		kWillRename,
 
-kWillChmod,
+		kWillStat,
 
-kWillUtime,
+		kWillChmod,
 
-kWillAccess,
+		kWillUtime,
 
-kWillMkdir,
+		kWillAccess,
 
-kWillRmdir,
+		kWillMkdir,
 
-kWillOpendir,
+		kWillRmdir,
 
-kWillSymlink,
+		kWillOpendir,
 
-kWillReadlink,
+		kWillSymlink,
 
-kWillGetfileinfo,
-kWillSetfileinfo,
+		kWillReadlink,
 
-kWillFaccess,
+		kWillGetfileinfo,
+		kWillSetfileinfo,
+
+		kWillFaccess,
 
 		kNoRequest
 	};
-	
-	GUSIFileToken(const char * path, Request request, bool useAlias = false);
-	GUSIFileToken(const GUSIFileSpec & spec, Request request);
+
+	GUSIFileToken(const char *path, Request request, bool useAlias = false);
+	GUSIFileToken(const GUSIFileSpec &spec, Request request);
 	GUSIFileToken(short fRefNum, Request request);
-	
-	bool	 		IsFile() 		const { return fIsFile; 		}
-	bool	 		IsDevice() 		const { return !fIsFile; 		}
-	Request			WhichRequest()	const { return fRequest;		}	
-	GUSIDevice *	Device()		const {	return fDevice;			}
-	const char *	Path()			const { return fPath;			}
-	
-	static bool		StrFragEqual(const char * name, const char * frag);
-	enum StdStream {
+
+	bool IsFile() const { return fIsFile; }
+	bool IsDevice() const { return !fIsFile; }
+	Request WhichRequest() const { return fRequest; }
+	GUSIDevice *Device() const { return fDevice; }
+	const char *Path() const { return fPath; }
+
+	static bool StrFragEqual(const char *name, const char *frag);
+	enum StdStream
+	{
 		kStdin,
 		kStdout,
 		kStderr,
 		kConsole,
 		kNoStdStream = -2
-	};				
-	static StdStream StrStdStream(const char * name);
-	
+	};
+	static StdStream StrStdStream(const char *name);
+
 private:
-	GUSIDevice * 	fDevice;
-	const char *	fPath;
-	bool			fIsFile;
-	Request			fRequest;
+	GUSIDevice *fDevice;
+	const char *fPath;
+	bool fIsFile;
+	Request fRequest;
 };
 
-
-class GUSIDirectory {
+class GUSIDirectory
+{
 public:
-	virtual 		 	~GUSIDirectory() {}
-	virtual dirent    *	readdir() = 0;
-	virtual long 		telldir() = 0;
-	virtual void 		seekdir(long pos) = 0;
-	virtual void 		rewinddir() = 0;
+	virtual ~GUSIDirectory() {}
+	virtual dirent *readdir() = 0;
+	virtual long telldir() = 0;
+	virtual void seekdir(long pos) = 0;
+	virtual void rewinddir() = 0;
+
 protected:
 	friend class GUSIDevice;
-	GUSIDirectory()     {}
+	GUSIDirectory() {}
 };
 
-
-class GUSIDeviceRegistry {
+class GUSIDeviceRegistry
+{
 public:
-	
-static  GUSIDeviceRegistry *	Instance();
+	static GUSIDeviceRegistry *Instance();
 
-	
-GUSISocket * open(const char * path, int flags);
+	GUSISocket *open(const char *path, int flags);
 
-int remove(const char * path);
+	int remove(const char *path);
 
-int rename(const char * oldname, const char * newname);
+	int rename(const char *oldname, const char *newname);
 
-int stat(const char * path, struct stat * buf, bool useAlias);
+	int stat(const char *path, struct stat *buf, bool useAlias);
 
-int chmod(const char * path, mode_t mode);
+	int chmod(const char *path, mode_t mode);
 
-int utime(const char * path, const utimbuf * times);
+	int utime(const char *path, const utimbuf *times);
 
-int access(const char * path, int mode);
+	int access(const char *path, int mode);
 
-int mkdir(const char * path);
+	int mkdir(const char *path);
 
-int rmdir(const char * path);
+	int rmdir(const char *path);
 
-GUSIDirectory * opendir(const char * path);
+	GUSIDirectory *opendir(const char *path);
 
-int symlink(const char * target, const char * newlink);
+	int symlink(const char *target, const char *newlink);
 
-int readlink(const char * path, char * buf, int bufsize);
+	int readlink(const char *path, char *buf, int bufsize);
 
-int fgetfileinfo(const char * path, OSType * creator, OSType * type);
-int fsetfileinfo(const char * path, OSType creator, OSType type);
+	int fgetfileinfo(const char *path, OSType *creator, OSType *type);
+	int fsetfileinfo(const char *path, OSType creator, OSType type);
 
-int faccess(const char * path, unsigned * cmd, void * arg);
+	int faccess(const char *path, unsigned *cmd, void *arg);
 
-	
-void AddDevice(GUSIDevice * device);
-void RemoveDevice(GUSIDevice * device);
+	void AddDevice(GUSIDevice *device);
+	void RemoveDevice(GUSIDevice *device);
 
-	
-class iterator;
+	class iterator;
 
-iterator begin();
-iterator end();
+	iterator begin();
+	iterator end();
 
 protected:
-	
-friend class GUSIFileToken;
+	friend class GUSIFileToken;
 
-GUSIDevice *	Lookup(GUSIFileToken & file);
+	GUSIDevice *Lookup(GUSIFileToken &file);
 
 private:
-	
-static GUSIDeviceRegistry *	sInstance;
+	static GUSIDeviceRegistry *sInstance;
 
-GUSIDevice *	fFirstDevice;
-GUSIDeviceRegistry();
-
+	GUSIDevice *fFirstDevice;
+	GUSIDeviceRegistry();
 };
 
-
-class GUSIDevice {
+class GUSIDevice
+{
 public:
-	virtual bool	Want(GUSIFileToken & file);
-	
-	#warning: unhandled macro "definitions[mat]"
+	virtual bool Want(GUSIFileToken &file);
+
+	virtual GUSISocket *open(GUSIFileToken &file, int flags);
+	virtual int remove(GUSIFileToken &file);
+	virtual int rename(GUSIFileToken &from, const char *newname);
+	virtual int stat(GUSIFileToken &file, struct stat *buf);
+	virtual int chmod(GUSIFileToken &file, mode_t mode);
+	virtual int utime(GUSIFileToken &file, const utimbuf *times);
+	virtual int access(GUSIFileToken &file, int mode);
+	virtual int mkdir(GUSIFileToken &file);
+	virtual int rmdir(GUSIFileToken &file);
+	virtual GUSIDirectory *opendir(GUSIFileToken &file);
+	virtual int symlink(GUSIFileToken &to, const char *newlink);
+	virtual int readlink(GUSIFileToken &link, char *buf, int bufsize);
+	virtual int fgetfileinfo(GUSIFileToken &file, OSType *creator, OSType *type);
+	virtual int fsetfileinfo(GUSIFileToken &file, OSType creator, OSType type);
+	virtual int faccess(GUSIFileToken &file, unsigned *cmd, void *arg);
+	int faccess(const char *path, unsigned *cmd, void *arg);
+
 protected:
 	friend class GUSIDeviceRegistry;
 	friend class GUSIDeviceRegistry::iterator;
-	
-	GUSIDevice() : fNextDevice(nil)			{}
-	virtual ~GUSIDevice()					{}
-	
-	GUSIDevice	*	fNextDevice;
+
+	GUSIDevice() : fNextDevice(nil) {}
+	virtual ~GUSIDevice() {}
+
+	GUSIDevice *fNextDevice;
 };
 
-
 #if PRAGMA_STRUCT_ALIGN
-#pragma options align=reset
+#pragma options align = reset
 #endif
-
 
 extern "C" void GUSISetupDevices();
 
-
-
-inline GUSIDeviceRegistry * GUSIDeviceRegistry::Instance()
+inline GUSIDeviceRegistry *GUSIDeviceRegistry::Instance()
 {
-	if (!sInstance) {
+	if (!sInstance)
+	{
 		sInstance = new GUSIDeviceRegistry();
 		GUSISetupDevices();
 	}
-	
+
 	return sInstance;
 }
 
-class GUSIDeviceRegistry::iterator {
+class GUSIDeviceRegistry::iterator
+{
 public:
-	iterator(GUSIDevice * device = 0) : fDevice(device) {}
-	GUSIDeviceRegistry::iterator & operator++()		
-		{ fDevice = fDevice->fNextDevice; return *this; 					}
+	iterator(GUSIDevice *device = 0) : fDevice(device) {}
+	GUSIDeviceRegistry::iterator &operator++()
+	{
+		fDevice = fDevice->fNextDevice;
+		return *this;
+	}
 	GUSIDeviceRegistry::iterator operator++(int)
-		{ GUSIDeviceRegistry::iterator old(*this); fDevice = fDevice->fNextDevice; return old; 	}
+	{
+		GUSIDeviceRegistry::iterator old(*this);
+		fDevice = fDevice->fNextDevice;
+		return old;
+	}
 	bool operator==(const GUSIDeviceRegistry::iterator other) const
-								{ return fDevice==other.fDevice; 			}
-	GUSIDevice & operator*()	{ return *fDevice;							}
-	GUSIDevice * operator->()	{ return fDevice;							}
+	{
+		return fDevice == other.fDevice;
+	}
+	GUSIDevice &operator*() { return *fDevice; }
+	GUSIDevice *operator->() { return fDevice; }
+
 private:
-	GUSIDevice *				fDevice;
+	GUSIDevice *fDevice;
 };
 
-inline GUSIDeviceRegistry::iterator GUSIDeviceRegistry::begin()		
-{ 
-	return GUSIDeviceRegistry::iterator(fFirstDevice);	
+inline GUSIDeviceRegistry::iterator GUSIDeviceRegistry::begin()
+{
+	return GUSIDeviceRegistry::iterator(fFirstDevice);
 }
 
-inline GUSIDeviceRegistry::iterator GUSIDeviceRegistry::end()		
-{ 
-	return GUSIDeviceRegistry::iterator();				
+inline GUSIDeviceRegistry::iterator GUSIDeviceRegistry::end()
+{
+	return GUSIDeviceRegistry::iterator();
 }
-
 
 #endif /* GUSI_SOURCE */
 

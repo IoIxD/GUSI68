@@ -8,6 +8,23 @@
 
 #include <pthread.h>
 
-#warning: unhandled macro "definitions[mat]"
+struct GUSIPThread : public GUSIContext
+{
+private:
+    GUSIPThread() : GUSIContext(0) {} // Never called
+};
+struct GUSIPThreadKey : public GUSISpecific
+{
+    GUSIPThreadKey(GUSIPThreadKeyDestructor destructor) : GUSISpecific(destructor) {}
+};
+struct GUSIPThreadMutex : public GUSIContextQueue
+{
+    bool fPolling;
+
+    GUSIPThreadMutex() : fPolling(false) {}
+};
+struct GUSIPThreadCond : public GUSIContextQueue
+{
+};
 
 #endif /* _GUSIPThread_ */

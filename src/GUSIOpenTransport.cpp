@@ -14,36 +14,61 @@
 
 GUSI_USING_STD_NAMESPACE
 
-#warning: unhandled macro "definitions[mat]"
-#warning: unhandled macro "definitions[mat]"
-#warning: unhandled macro "definitions[mat]"
-#warning: unhandled macro "definitions[mat]"
+inline uint32_t CompleteMask(OTEventCode code)
+{
+	return 1 << (code & 0x1F);
+}
+bool GUSIOTFactory::sOK = false;
 
-int GUSIOTStrategy::CopyAddress(const TNetbuf & from, TNetbuf & to)
+bool GUSIOTFactory::Initialize()
+{
+	if (!sOK)
+		sOK = !InitOpenTransport();
+	return sOK;
+}
+GUSISocket *GUSIOTStreamFactory::socket(int domain, int type, int protocol)
+{
+	GUSIOTStrategy *strategy = Strategy(domain, type, protocol);
+	if (Initialize() && strategy)
+		return new GUSIOTStreamSocket(strategy);
+	else
+		return static_cast<GUSISocket *>(0);
+}
+
+GUSISocket *GUSIOTDatagramFactory::socket(int domain, int type, int protocol)
+{
+	GUSIOTStrategy *strategy = Strategy(domain, type, protocol);
+	if (Initialize() && strategy)
+		return new GUSIOTDatagramSocket(strategy);
+	else
+		return static_cast<GUSISocket *>(0);
+}
+
+int GUSIOTStrategy::CopyAddress(const TNetbuf &from, TNetbuf &to)
 {
 	memcpy(to.buf, from.buf, to.len = from.len);
-	
+
 	return 0;
 }
 
-
-GUSIOTSocket::GUSIOTSocket(GUSIOTStrategy * strategy)
+GUSIOTSocket::GUSIOTSocket(GUSIOTStrategy *strategy)
 {
-	
-fNewEvent 		= 0;
-fEvent 			= 0;
-fNewCompletion	= 0;
-fCompletion		= 0;
+
+	fNewEvent = 0;
+	fEvent = 0;
+	fNewCompletion = 0;
+	fCompletion = 0;
 
 	SetAsyncMacError(
 		OTAsyncOpenEndpoint(
-			fStrategy->CreateConfiguration(), 
-			0, fStrategy->EndpointInfo(), 
-			reinterpret_cast<OTNotifyProcPtr>(GUSIOTNotify), 
-			this)); 
+			fStrategy->CreateConfiguration(),
+			0, fStrategy->EndpointInfo(),
+			reinterpret_cast<OTNotifyProcPtr>(GUSIOTNotify),
+			this));
 	AddContext();
 	MopupEvents();
-	while (!fAsyncError && !(fCompletion & CompleteMask(T_OPENCOMPLETE))) {
+	while (!fAsyncError && !(fCompletion & CompleteMask(T_OPENCOMPLETE)))
+	{
 		GUSIContext::Yield(kGUSIBlock);
 		MopupEvents();
 	}
@@ -53,38 +78,39 @@ fCompletion		= 0;
 		GUSISetPosixError(GetAsyncError());
 }
 
-int GUSIOTSocket::BindToAddress(GUSIOTTBind * addr)
+int GUSIOTSocket::BindToAddress(GUSIOTTBind *addr)
 {
 	fSockName = new (fEndpoint) GUSIOTTBind;
 	if (!fSockName)
 		return GUSISetPosixError(ENOMEM);
-	fCompletion	   &= ~CompleteMask(T_BINDCOMPLETE);
-	fAsyncError		= 0;
+	fCompletion &= ~CompleteMask(T_BINDCOMPLETE);
+	fAsyncError = 0;
 	SetAsyncMacError(OTBind(fEndpoint, addr, fSockName));
 	AddContext();
 	MopupEvents();
-	while (!fAsyncError && !(fCompletion & CompleteMask(T_BINDCOMPLETE))) {
+	while (!fAsyncError && !(fCompletion & CompleteMask(T_BINDCOMPLETE)))
+	{
 		GUSIContext::Yield(kGUSIBlock);
 		MopupEvents();
 	}
 	RemoveContext();
 	GUSIContext::Raise();
-	if (GUSISetPosixError(GetAsyncError())) {
+	if (GUSISetPosixError(GetAsyncError()))
+	{
 		delete fSockName;
 		fSockName = nil;
-		
+
 		return -1;
-	} else
+	}
+	else
 		return 0;
 }
 
-
-GUSIOTStreamSocket::GUSIOTStreamSocket(GUSIOTStrategy * strategy)
+GUSIOTStreamSocket::GUSIOTStreamSocket(GUSIOTStrategy *strategy)
 	: GUSIOTSocket(strategy)
 {
-	
-fNextListener	= nil;
 
+	fNextListener = nil;
 }
 
 GUSIOTStreamSocket::~GUSIOTStreamSocket()
@@ -94,26 +120,27 @@ GUSIOTStreamSocket::~GUSIOTStreamSocket()
 
 bool GUSIOTStreamSocket::Close(UInt32 now)
 {
-	
-char 	discard[256];
-OTFlags	otflags;
-while (OTRcv(fEndpoint, discard, 256, &otflags) >= 0)
-	;
-MopupEvents();
 
-	if (now < fDeadline && OTGetEndpointState(fEndpoint) > T_IDLE) {
+	char discard[256];
+	OTFlags otflags;
+	while (OTRcv(fEndpoint, discard, 256, &otflags) >= 0)
+		;
+	MopupEvents();
+
+	if (now < fDeadline && OTGetEndpointState(fEndpoint) > T_IDLE)
+	{
 		return false;
-	} else {
+	}
+	else
+	{
 		GUSIOTSocket::close();
-		
+
 		return true;
 	}
 }
 
-
-GUSIOTDatagramSocket::GUSIOTDatagramSocket(GUSIOTStrategy * strategy)
+GUSIOTDatagramSocket::GUSIOTDatagramSocket(GUSIOTStrategy *strategy)
 	: GUSIOTSocket(strategy)
 {
-	#warning: unhandled macro "definitions[mat]"
+	fPeerName = nil;
 }
-

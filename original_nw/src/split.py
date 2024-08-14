@@ -40,13 +40,13 @@ for filename in os.listdir(directory):
                         print(defin, "expanded size: "+str(len(definitions[defin])),end="\r")
                         definitions[defin] = definitions[defin].replace("<<"+mat+">>", definitions[mat])
                     else:
-                        definitions[defin] = definitions[defin].replace("<<"+mat+">>", "#warning: unhandled macro \"definitions[mat]\"")
+                        definitions[defin] = definitions[defin].replace("<<"+mat+">>", "#warning unhandled macro \""+mat+"\"")
             print("")
             
         for defin in definitions:
             if ".h" in defin or ".cp" in defin:
                 nfname = defin.replace(".cp",".cpp")
-                fn = os.path.join(os.path.join("..","src"),nfname)
+                fn = os.path.join(os.path.join(os.path.join("..",".."),"src"),nfname)
                 os.makedirs(os.path.dirname(fn), exist_ok=True)
                 nf = open(fn,"w+")
                 nf.write(definitions[defin])

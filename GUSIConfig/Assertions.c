@@ -5,7 +5,7 @@
 
 	Version:	Appearance 1.0 SDK
 
-	Copyright:	� 1997 by Apple Computer, Inc., all rights reserved.
+	Copyright:	  1997 by Apple Computer, Inc., all rights reserved.
 
 	$Log: Assertions.c,v $
 	Revision 1.1  1999/06/24 06:43:41  neeri

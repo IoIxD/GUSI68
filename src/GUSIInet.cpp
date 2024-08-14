@@ -10,4 +10,10 @@
 
 GUSISocketTypeRegistry gGUSIInetFactories(AF_INET, 8);
 
-#warning: unhandled macro "definitions[mat]"
+void GUSIwithInetSockets()
+{
+    if (GUSIOTFactory::Initialize())
+        GUSIwithOTInetSockets();
+    else
+        GUSIwithMTInetSockets();
+}

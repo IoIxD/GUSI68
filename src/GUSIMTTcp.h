@@ -16,9 +16,22 @@ __END_DECLS
 
 #include "GUSIFactory.h"
 
-#warning: unhandled macro "definitions[mat]"
+class GUSIMTTcpFactory : public GUSISocketFactory
+{
+public:
+    static GUSISocketFactory *Instance();
+    virtual GUSISocket *socket(int domain, int type, int protocol);
 
-#warning: unhandled macro "definitions[mat]"
+private:
+    GUSIMTTcpFactory() {}
+    static GUSISocketFactory *instance;
+};
+inline GUSISocketFactory *GUSIMTTcpFactory::Instance()
+{
+    if (!instance)
+        instance = new GUSIMTTcpFactory;
+    return instance;
+}
 
 #endif /* GUSI_INTERNAL */
 
