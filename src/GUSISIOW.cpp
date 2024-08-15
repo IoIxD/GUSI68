@@ -31,6 +31,24 @@ static void GUSISIOWUpdate(EventRecord *ev)
 	_DoUpdate((WindowPtr)ev->message);
 }
 
+static void GUSISIOWActivate(EventRecord *ev)
+{
+	GUSIDoActivate(reinterpret_cast<WindowPtr>(ev->message), ev->modifiers & activeFlag);
+}
+
+static void GUSISIOWSusRes(EventRecord *ev)
+{
+	switch ((ev->message >> 24) & 0xFF)
+	{
+	case suspendResumeMessage:
+		GUSIDoActivate(FrontWindow(), ev->message & resumeFlag);
+		break;
+	case mouseMovedMessage:
+		_DoIdle();
+		break;
+	}
+}
+
 static void GUSISetupSIOW()
 {
 	GUSISetHook(GUSI_EventHook + updateEvt, (GUSIHook)GUSISIOWUpdate);

@@ -9,7 +9,18 @@
 #include <unistd.h>
 #include <memory>
 
+#include <sfhdr.h>
+
 GUSI_USING_STD_NAMESPACE
+
+using std::auto_ptr;
+
+inline sigset_t SigMask(int signal) { return 1 << (signal - 1); }
+
+sigset_t GUSISigContext::CantBlock()
+{
+	return SigMask(SIGKILL) | SigMask(SIGSTOP) | SigMask(SIGILL) | SigMask(SIGFPE) | SigMask(SIGSEGV);
+}
 
 sigset_t GUSISigContext::GetBlocked() const
 {
@@ -387,17 +398,6 @@ void abort(void)
 
 	_exit(2);
 }
-
-#ifdef __MWERKS__
-extern int __aborting;
-
-extern "C" void _exit(int code)
-{
-	__aborting = 1;
-
-	exit(code);
-}
-#endif
 
 class GUSIAlarm : public GUSITimer
 {

@@ -8,26 +8,32 @@
 
 __BEGIN_DECLS
 
-// typedef struct GUSIPThread *	pthread_t;
+typedef struct GUSIPThread *pthread_t;
 
-// typedef struct GUSIPThreadAttr *pthread_attr_t;
+typedef struct GUSIPThreadAttr *pthread_attr_t;
 
-// typedef struct GUSIPThreadKey *pthread_key_t;
+typedef struct GUSIPThreadKey *pthread_key_t;
 
-// typedef char pthread_once_t;
+typedef char pthread_once_t;
 
 enum
 {
 	PTHREAD_ONCE_INIT = 0
 };
 
-// typedef struct GUSIPThreadMutex *pthread_mutex_t;
-// typedef void *pthread_mutexattr_t;
+#undef pthread_mutex_t
+#undef pthread_mutexattr_t
+
+typedef struct GUSIPThreadMutex *pthread_mutex_t;
+typedef void *pthread_mutexattr_t;
 
 #define PTHREAD_MUTEX_INITIALIZER 0
 
-// typedef struct GUSIPThreadCond *pthread_cond_t;
-// typedef void *pthread_condattr_t;
+#undef pthread_cond_t
+#undef pthread_condattr_t
+
+typedef struct GUSIPThreadCond *pthread_cond_t;
+typedef void *pthread_condattr_t;
 
 #define PTHREAD_COND_INITIALIZER 0
 

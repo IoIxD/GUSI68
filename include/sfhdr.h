@@ -40,8 +40,8 @@
 #define _size size
 #define _val val
 
-#include "FEATURE/sfio"
-#include "FEATURE/mmap"
+// #include "FEATURE/sfio"
+// #include "FEATURE/mmap"
 
 /* define va_list, etc. before including sfio_t.h (sfio.h) */
 #if !_PACKAGE_ast
@@ -67,7 +67,7 @@
 #else
 #include <varargs.h>
 #endif
-#include "FEATURE/common"
+// #include "FEATURE/common"
 #if !__STD_C
 #define const
 #endif
@@ -299,7 +299,7 @@
 #undef MAP_TYPE
 #endif
 
-#include "FEATURE/float"
+// #include "FEATURE/float"
 
 #include <errno.h>
 #include <ctype.h>

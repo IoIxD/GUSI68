@@ -11,6 +11,8 @@
 
 GUSI_USING_STD_NAMESPACE
 
+using std::min;
+
 class GUSIPPCSocket : public GUSISocket,
 					  protected GUSISMBlocking,
 					  protected GUSISMState,
@@ -91,6 +93,53 @@ protected:
 
 	GUSIPPCSocket(GUSIPPCSocket *orig, Listener &listener);
 };
+
+pascal void GUSIPPCSendDone(PPCParamBlockPtr pb)
+{
+	GUSIPPCSocket *sock =
+		reinterpret_cast<GUSIPPCSocket *>((char *)pb - offsetof(GUSIPPCSocket, fSendPB));
+	if (sock->fOutputBuffer.Locked())
+		sock->fOutputBuffer.Defer(GUSIRingBuffer::Deferred(GUSIPPCSendDone), pb);
+	else
+	{
+		PPCWritePBRec &writeParam = pb->writeParam;
+
+		sock->fOutputBuffer.ClearDefer();
+		sock->fOutputBuffer.FreeBuffer(writeParam.bufferPtr, writeParam.actualLength);
+		if (writeParam.ioResult)
+		{
+			for (long valid; valid = sock->fOutputBuffer.Valid();)
+				sock->fOutputBuffer.FreeBuffer(nil, valid);
+			sock->fWriteShutdown = true;
+		}
+		GUSIPPCSend(sock);
+		sock->Wakeup();
+	}
+}
+
+pascal void GUSIPPCRecvDone(PPCParamBlockPtr pb)
+{
+	GUSIPPCSocket *sock =
+		reinterpret_cast<GUSIPPCSocket *>((char *)pb - offsetof(GUSIPPCSocket, fRecvPB));
+	if (sock->fInputBuffer.Locked())
+		sock->fInputBuffer.Defer(GUSIRingBuffer::Deferred(GUSIPPCRecvDone), pb);
+	else
+	{
+		PPCReadPBRec &readParam = pb->readParam;
+		sock->fInputBuffer.ClearDefer();
+		switch (readParam.ioResult)
+		{
+		case noErr:
+			sock->fInputBuffer.ValidBuffer(readParam.bufferPtr, readParam.actualLength);
+			GUSIPPCRecv(sock);
+			break;
+		default:
+			sock->fReadShutdown = true;
+			break;
+		}
+		sock->Wakeup();
+	}
+}
 
 extern "C" void GUSIwithPPCSockets()
 {
@@ -176,29 +225,6 @@ GUSIPPCSocket::~GUSIPPCSocket()
 	GUSIContext::Raise();
 }
 
-pascal void GUSIPPCSendDone(PPCParamBlockPtr pb)
-{
-	GUSIPPCSocket *sock =
-		reinterpret_cast<GUSIPPCSocket *>((char *)pb - offsetof(GUSIPPCSocket, fSendPB));
-	if (sock->fOutputBuffer.Locked())
-		sock->fOutputBuffer.Defer(GUSIRingBuffer::Deferred(GUSIPPCSendDone), pb);
-	else
-	{
-		PPCWritePBRec &writeParam = pb->writeParam;
-
-		sock->fOutputBuffer.ClearDefer();
-		sock->fOutputBuffer.FreeBuffer(writeParam.bufferPtr, writeParam.actualLength);
-		if (writeParam.ioResult)
-		{
-			for (long valid; valid = sock->fOutputBuffer.Valid();)
-				sock->fOutputBuffer.FreeBuffer(nil, valid);
-			sock->fWriteShutdown = true;
-		}
-		GUSIPPCSend(sock);
-		sock->Wakeup();
-	}
-}
-
 void GUSIPPCSend(GUSIPPCSocket *sock)
 {
 	size_t valid = sock->fOutputBuffer.Valid();
@@ -225,30 +251,6 @@ void GUSIPPCSend(GUSIPPCSocket *sock)
 		writeParam.blockType = 'strm';
 
 		PPCWriteAsync(&writeParam);
-	}
-}
-
-pascal void GUSIPPCRecvDone(PPCParamBlockPtr pb)
-{
-	GUSIPPCSocket *sock =
-		reinterpret_cast<GUSIPPCSocket *>((char *)pb - offsetof(GUSIPPCSocket, fRecvPB));
-	if (sock->fInputBuffer.Locked())
-		sock->fInputBuffer.Defer(GUSIRingBuffer::Deferred(GUSIPPCRecvDone), pb);
-	else
-	{
-		PPCReadPBRec &readParam = pb->readParam;
-		sock->fInputBuffer.ClearDefer();
-		switch (readParam.ioResult)
-		{
-		case noErr:
-			sock->fInputBuffer.ValidBuffer(readParam.bufferPtr, readParam.actualLength);
-			GUSIPPCRecv(sock);
-			break;
-		default:
-			sock->fReadShutdown = true;
-			break;
-		}
-		sock->Wakeup();
 	}
 }
 

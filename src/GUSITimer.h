@@ -20,6 +20,7 @@ typedef struct GUSITimer GUSITimer;
 #include <Math64.h>
 
 #include <ConditionalMacros.h>
+#include "GUSIContext.h"
 
 #if PRAGMA_STRUCT_ALIGN
 #pragma options align = native

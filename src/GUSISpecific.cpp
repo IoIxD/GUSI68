@@ -90,4 +90,4 @@ void GUSISpecificTable::Destruct(GUSISpecific *key)
 }
 
 template <class T, GUSISpecificDestructor D>
-T *GUSISpecificTable::get() { return get(GUSIContext::Current()); }
+T *GUSISpecificData<T, D>::get() { return get(GUSIContext::Current()); }

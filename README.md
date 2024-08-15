@@ -4,6 +4,7 @@ GUSI (Grand Unified Socket Interface) is a POSIX/Pthreads/Sockets library bringi
 
 **Notes:**
 
+- Using this as is requires commenting out several things in your Retro68 installation.
 - Networking does not work, because
   - The person who wrote it used several horrifically cursed C++ practices that were accepted by MetroWerks but not by gcc.
   - It relies on an "dnr.c" file from Apple for the "OpenResolver" function, which throws a compiler error that I can't seem to solve. Maybe [the person I got it from](https://github.com/antscode/MacTCPHelper/) was using the reverse engineered headers and not the Universal headers like I am? Don't know.
