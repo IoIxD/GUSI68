@@ -14,6 +14,7 @@ include_directories(include/)
 include_directories(src/)
 add_compile_definitions(__STD_C)
 add_compile_definitions(_hdr_stdarg)
+#add_compile_definitions(GUSI_INTERNAL)
 
 #GUSIConfig/**/**/**/*.c GUSIConfig/**/**/**/*.h GUSIConfig/**/**/**/*.cpp GUSIConfig/**/**/**/*.hpp 
 #GUSIConfig/**/**/*.c GUSIConfig/**/**/*.h GUSIConfig/**/**/*.cpp GUSIConfig/**/**/*.hpp 
@@ -21,6 +22,7 @@ add_compile_definitions(_hdr_stdarg)
 #GUSIConfig/*.c GUSIConfig/*.h GUSIConfig/*.cpp GUSIConfig/*.hpp
 
 file(GLOB_RECURSE sources
+    examples/*.cpp
     # GUSIConfig/*.h GUSIConfig/*.c GUSIConfig/*.cp GUSIConfig/*.r GUSIConfig/*.rsrc
     src/**/**/**/*.c src/**/**/**/*.h src/**/**/**/*.cpp src/**/**/**/*.hpp 
     src/**/**/*.c src/**/**/*.h src/**/**/*.cpp src/**/**/*.hpp 

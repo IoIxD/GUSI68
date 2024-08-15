@@ -83,10 +83,10 @@ struct EventRecord;
 typedef void (*GUSIEventFn)(EventRecord *ev);
 #define GUSI_EventHook 'evnt'
 
-#ifdef GUSI_INTERNAL
-extern GUSISpinFn gGUSISpinHook;
-extern GUSIExecFn gGUSIExecHook;
-#endif /* GUSI_INTERNAL */
+// #ifdef GUSI_INTERNAL
+static GUSISpinFn gGUSISpinHook;
+static GUSIExecFn gGUSIExecHook;
+// #endif /* GUSI_INTERNAL */
 
 typedef short OSErr;
 
@@ -116,8 +116,8 @@ private:
 
 void GUSIHandleNextEvent(long sleepTime);
 
-int GUSI_vsprintf(char *s, const char *format, va_list args);
-int GUSI_sprintf(char *s, const char *format, ...);
+// int GUSI_vsprintf(char *s, const char *format, va_list args);
+// int GUSI_sprintf(char *s, const char *format, ...);
 
 #endif /* GUSI_SOURCE */
 

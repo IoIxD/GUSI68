@@ -6,6 +6,12 @@
     "utility": "cpp",
     "dnr.c": "cpp",
     "random": "cpp",
-    "limits": "cpp"
+    "limits": "cpp",
+    "array": "cpp",
+    "*.tcc": "cpp",
+    "memory": "cpp",
+    "istream": "cpp",
+    "functional": "cpp",
+    "tuple": "cpp"
   }
 }

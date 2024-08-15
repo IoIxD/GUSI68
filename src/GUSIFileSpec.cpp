@@ -14,6 +14,11 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+inline OSErr GUSIFileSpec::Error() const
+{
+	return fError;
+}
+
 bool ReadHex(const char *path, int bytes, char *result)
 {
 	char hexbyte[3];
@@ -454,7 +459,7 @@ char *GUSIFileSpec::EncodedPath() const
 	if (!CScratch())
 		return nil;
 
-	GUSI_sprintf(sScratch, "\021%04hX%08X:%#s", fSpec.vRefNum, fSpec.parID, fSpec.name);
+	sprintf(sScratch, "\021%04hX%08X:%#s", fSpec.vRefNum, fSpec.parID, fSpec.name);
 
 	return sScratch;
 }
@@ -609,7 +614,7 @@ void GUSITempFileSpec::TempName()
 	{
 		char name[8];
 
-		GUSI_sprintf(name, "tmp%04d", sID++);
+		sprintf(name, "tmp%04d", sID++);
 		SetName(name);
 
 		sID %= 10000;
@@ -652,7 +657,7 @@ void GUSITempFileSpec::TempName(ConstStr31Param basename)
 		{
 			name[0] = 30;
 			memcpy(name + 1, basename + 1, 31 - len);
-			GUSI_sprintf(reinterpret_cast<char *>(name + 32 - len), "%d", id);
+			sprintf(reinterpret_cast<char *>(name + 32 - len), "%d", id);
 		}
 		else
 		{
@@ -660,7 +665,7 @@ void GUSITempFileSpec::TempName(ConstStr31Param basename)
 			unsigned char *period = reinterpret_cast<unsigned char *>(memchr(basename + 1, '.', *basename));
 			int prelen = period ? (period - basename) - 1 : *basename;
 			memcpy(name + 1, basename + 1, prelen);
-			GUSI_sprintf(reinterpret_cast<char *>(name + 1 + prelen), ".%d", id);
+			sprintf(reinterpret_cast<char *>(name + 1 + prelen), ".%d", id);
 			memcpy(name + 1 + prelen + len, period, *basename - prelen);
 		}
 		SetName(name);

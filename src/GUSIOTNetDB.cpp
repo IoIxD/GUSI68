@@ -9,19 +9,21 @@
 
 #include <OpenTptInternet.h>
 
+GUSINetDB *GUSINetDB::sInstance;
 
-inline uint32_t CompleteMask(OTEventCode code)	
-{ 	
-	return 1 << (code & 0x1F); 
+inline uint32_t CompleteMask(OTEventCode code)
+{
+	return 1 << (code & 0x1F);
 }
 
 pascal void GUSIOTNetDBNotify(
-	GUSIOTNetDB * netdb, OTEventCode code, OTResult result, void *cookie)
+	GUSIOTNetDB *netdb, OTEventCode code, OTResult result, void *cookie)
 {
 	GUSI_MESSAGE(("GUSIOTNetDBNotify %08x %d\n", code, result));
-	GUSIContext *	context = netdb->fCreationContext;
-	
-	switch (code & 0x7F000000L) {
+	GUSIContext *context = netdb->fCreationContext;
+
+	switch (code & 0x7F000000L)
+	{
 	case 0:
 		netdb->fEvent |= code;
 		result = 0;
@@ -30,7 +32,8 @@ pascal void GUSIOTNetDBNotify(
 	case kCOMPLETEEVENT:
 		if (!(code & 0x00FFFFE0))
 			netdb->fCompletion |= CompleteMask(code);
-		switch (code) {
+		switch (code)
+		{
 		case T_OPENCOMPLETE:
 			netdb->fSvc = static_cast<InetSvcRef>(cookie);
 			break;
@@ -41,12 +44,13 @@ pascal void GUSIOTNetDBNotify(
 		}
 		break;
 	default:
-		switch (code) {
+		switch (code)
+		{
 		case kOTProviderWillClose:
 		case kOTProviderIsClosed:
-			netdb->fCreationContext = nil;	// Close & reopen
+			netdb->fCreationContext = nil; // Close & reopen
 			break;
-		default: 
+		default:
 			result = 0;
 			break;
 		}
@@ -57,7 +61,6 @@ pascal void GUSIOTNetDBNotify(
 	context->Wakeup();
 }
 
-
 void GUSIOTNetDB::Instantiate()
 {
 	if (!sInstance)
@@ -66,8 +69,10 @@ void GUSIOTNetDB::Instantiate()
 
 bool GUSIOTNetDB::Resolver()
 {
-	if (!fCreationContext) {
-		if (fSvc) {
+	if (!fCreationContext)
+	{
+		if (fSvc)
+		{
 			OTCloseProvider(fSvc);
 			fSvc = nil;
 		}
@@ -76,7 +81,7 @@ bool GUSIOTNetDB::Resolver()
 			return false;
 		fAsyncError = 0;
 		OSStatus syncError = OTAsyncOpenInternetServices(
-			kDefaultInternetServicesPath, 
+			kDefaultInternetServicesPath,
 			0,
 			reinterpret_cast<OTNotifyProcPtr>(GUSIOTNetDBNotify),
 			this);
@@ -88,23 +93,23 @@ bool GUSIOTNetDB::Resolver()
 	return fSvc != 0;
 }
 
-static void CopyHost(InetHostInfo & otHost, GUSIhostent & unixHost)
+static void CopyHost(InetHostInfo &otHost, GUSIhostent &unixHost)
 {
 	size_t len = strlen(otHost.name);
-	len = (len+4) & ~3;
-	
-	unixHost.Alloc(len+kMaxHostAddrs*4);
+	len = (len + 4) & ~3;
+
+	unixHost.Alloc(len + kMaxHostAddrs * 4);
 	strcpy(unixHost.h_name, otHost.name);
-	unixHost.h_aliases[0] 	= NULL;			// Aliases not supported
-	unixHost.h_addrtype		= AF_INET;	
-	unixHost.h_length		= 4;
-	
+	unixHost.h_aliases[0] = NULL; // Aliases not supported
+	unixHost.h_addrtype = AF_INET;
+	unixHost.h_length = 4;
+
 	int addrs = 0;
-	for (int i=0; i<kMaxHostAddrs && otHost.addrs[addrs]!=0; ++i, ++addrs) {
+	for (int i = 0; i < kMaxHostAddrs && otHost.addrs[addrs] != 0; ++i, ++addrs)
+	{
 		unixHost.h_addr_list[addrs] = unixHost.fName + len;
 		len += 4;
 		memcpy(unixHost.h_addr_list[addrs], &otHost.addrs[addrs], 4);
 	}
 	unixHost.h_addr_list[addrs] = NULL;
 }
-

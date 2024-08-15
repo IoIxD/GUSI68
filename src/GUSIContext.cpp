@@ -23,6 +23,14 @@
 
 using std::auto_ptr;
 
+GUSIContext::Queue GUSIContext::sContexts;
+GUSIContext *GUSIContext::sCurrentContext;
+bool GUSIContext::sCreatingCurrentContext;
+bool GUSIContext::sHasThreading;
+OSErr GUSIContext::sError;
+
+GUSIProcess *GUSIProcess::sInstance;
+
 GUSI_USING_STD_NAMESPACE
 
 GUSI_NEEDS_QD
@@ -500,6 +508,8 @@ OSErr GUSIControl(ParamBlockRec *pb)
 
 static auto_ptr<GUSIThreadManagerProxy> sGUSIThreadManagerProxy;
 
+/*
+
 OSErr GUSIThreadManagerProxy::NewThread(
 	ThreadStyle threadStyle, ThreadEntryProcPtr threadEntry, void *threadParam,
 	Size stackSize, ThreadOptions options,
@@ -520,7 +530,7 @@ OSErr GUSIThreadManagerProxy::SetThreadTerminator(ThreadID thread,
 												  ThreadTerminationProcPtr threadTerminator, void *terminationProcParam)
 {
 	return ::SetThreadTerminator(thread, threadTerminator, terminationProcParam);
-}
+}*/
 
 GUSIThreadManagerProxy *GUSIThreadManagerProxy::Instance()
 {
@@ -529,9 +539,47 @@ GUSIThreadManagerProxy *GUSIThreadManagerProxy::Instance()
 	return sGUSIThreadManagerProxy.get();
 }
 
-GUSIThreadManagerProxy *GUSIThreadManagerProxy::MakeInstance()
+/*GUSIThreadManagerProxy *GUSIThreadManagerProxy::MakeInstance()
 {
 	return new GUSIThreadManagerProxy;
-}
+}*/
 
 GUSISigProcess *GUSIProcess::SigProcess() { return fSigProcess; }
+
+bool GUSIContext::Yield(GUSIYieldMode wait)
+{
+	bool mainThread = CreateCurrent()->fThreadID == kApplicationThreadID;
+	bool block = wait == kGUSIBlock && !mainThread;
+	GUSIProcess *process = GUSIProcess::Instance();
+	if (wait == kGUSIYield && LMGetTicks() - sCurrentContext->fEntryTicks < kThreadTimeSliceTicks)
+		return false;
+
+	bool interrupt = false;
+
+	do
+	{
+		if (mainThread)
+			process->Yield(wait);
+		if (interrupt = Interrupt())
+			goto done;
+		if (sHasThreading)
+		{
+			if (block)
+				SetThreadState(kCurrentThreadID, kStoppedThreadState, kNoThreadID);
+			else
+				YieldToAnyThread();
+		}
+	} while (wait == kGUSIBlock && !sCurrentContext->fWakeup);
+done:
+	sCurrentContext->fWakeup = false;
+
+	return interrupt;
+}
+void GUSISocket::AddContext(GUSIContext *context)
+{
+	fContexts.push_front(context ? context : GUSIContext::Current());
+}
+void GUSISocket::RemoveContext(GUSIContext *context)
+{
+	fContexts.remove(context ? context : GUSIContext::Current());
+}

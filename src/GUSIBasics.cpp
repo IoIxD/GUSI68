@@ -1,3 +1,5 @@
+#ifndef _GUSI_BASICS_
+#define _GUSI_BASICS_
 
 #define GUSI_MESSAGE_LEVEL 5
 
@@ -312,18 +314,4 @@ void GUSIHandleNextEvent(long sleepTime)
 		gGUSIEventHook[event.what](&event);
 }
 
-int GUSI_vsprintf(char *s, const char *format, va_list args)
-{
-	return vsprintf(s, format, args);
-}
-
-int GUSI_sprintf(char *s, const char *format, ...)
-{
-	va_list ap;
-
-	va_start(ap, format);
-	int len = GUSI_vsprintf(s, format, ap);
-	va_end(ap);
-
-	return len;
-}
+#endif

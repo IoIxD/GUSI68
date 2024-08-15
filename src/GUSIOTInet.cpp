@@ -322,7 +322,7 @@ static void SetAddress(sockaddr_in *sa, InetHost addr)
 
 static void SetInterface(ifreq *ifr, int ifNum, int aliasNum, InetHost addr)
 {
-	GUSI_sprintf(ifr->ifr_name, (aliasNum ? "ot%d:%d" : "ot%d"), ifNum, aliasNum);
+	sprintf(ifr->ifr_name, (aliasNum ? "ot%d:%d" : "ot%d"), ifNum, aliasNum);
 	SetAddress(reinterpret_cast<sockaddr_in *>(&ifr->ifr_addr), addr);
 }
 

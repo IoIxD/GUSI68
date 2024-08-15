@@ -405,3 +405,71 @@ void GUSIRingBuffer::Peeker::Peek(const GUSIScatterer &scatter, size_t &len)
 	}
 	len -= rest;
 }
+
+void GUSIRingBuffer::SwitchBuffer(size_t bufsiz)
+{
+	PurgeBuffers();
+	Lock();
+	if (fNewBuffer)
+		fNewBuffer->SwitchBuffer(bufsiz);
+	else if (bufsiz == fEnd - fBuffer) // No change
+		return;
+	else if (!fInUse && !fValid)
+	{
+		if (fBuffer)
+			DisposePtr(fBuffer);
+		fBuffer = fConsume = fProduce = bufsiz ? NewPtr(bufsiz) : 0;
+		fEnd = fBuffer + bufsiz;
+
+		fValid = fSpare = 0;
+		fFree = bufsiz;
+		fInUse = false;
+		fLocked = 0;
+		fDeferred = nil;
+		fDeferredArg = nil;
+		fNewBuffer = nil;
+		fOldBuffer = nil;
+	}
+	else
+		fNewBuffer = new GUSIRingBuffer(bufsiz);
+	Release();
+}
+void GUSIRingBuffer::PurgeBuffers()
+{
+	if (fOldBuffer)
+	{
+		delete fOldBuffer;
+
+		fOldBuffer = nil;
+	}
+}
+
+void *GUSIRingBuffer::Peeker::PeekBuffer(size_t &len)
+{
+	size_t streak;
+
+	if (!fCurBuffer)
+		return nil;
+
+	if (fPeek < fCurBuffer->fConsume)
+		streak = fCurBuffer->fConsume - fPeek;
+	else
+		streak = fCurBuffer->fEnd - fPeek - fCurBuffer->fSpare;
+	if (streak > fCurBuffer->fValid)
+		streak = fCurBuffer->fValid;
+	if (len > streak)
+		len = streak;
+	void *result = fPeek;
+	fPeek += len;
+	if (fPeek == fCurBuffer->fEnd - fCurBuffer->fSpare)
+		fPeek = fCurBuffer->fBuffer;
+	if (fPeek == fCurBuffer->fConsume)
+	{
+		while ((fCurBuffer = fCurBuffer->fNewBuffer) && !fCurBuffer->fValid)
+			;
+		if (fCurBuffer)
+			fPeek = fCurBuffer->fConsume;
+	}
+
+	return result;
+}

@@ -4,6 +4,8 @@
 #include "GUSIDiag.h"
 #include "GUSIInet.h"
 
+GUSISocketDomainRegistry *GUSISocketDomainRegistry::sInstance;
+
 int GUSISocketFactory::socketpair(int, int, int, GUSISocket *[2])
 {
 	return GUSISetPosixError(EOPNOTSUPP);

@@ -4,11 +4,14 @@
 #include "GUSIMacFile.h"
 #include "GUSINull.h"
 #include "GUSIDiag.h"
+#include "GUSIFileSpec.h"
 
 #include <fcntl.h>
 #include <utility>
 
 GUSI_USING_STD_NAMESPACE
+
+GUSIDeviceRegistry *GUSIDeviceRegistry::sInstance;
 
 bool GUSIFileToken::StrFragEqual(const char *name, const char *frag)
 {

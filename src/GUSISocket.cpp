@@ -310,3 +310,14 @@ int GUSISocket::fstat(struct stat *buf)
 
 	return 0;
 }
+
+GUSISocket::GUSISocket()
+	: fRefCount(0), fQueue(0), fNextSocket(0), fPrevSocket(0)
+{
+	GUSIContext::Setup(false);
+}
+
+bool GUSISocket::Supports(ConfigOption)
+{
+	return false;
+}

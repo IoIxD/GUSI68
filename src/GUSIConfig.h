@@ -9,90 +9,88 @@
 #include <ConditionalMacros.h>
 
 #if PRAGMA_STRUCT_ALIGN
-#pragma options align=native
+#pragma options align = native
 #endif
 
-
-class GUSIConfiguration {
+class GUSIConfiguration
+{
 public:
-	enum { kNoResource = -1, kDefaultResourceID = 10240 };
-	
-	static GUSIConfiguration * 	Instance();
-	static GUSIConfiguration *	CreateInstance(short resourceID = kDefaultResourceID);
-	
-	
-struct FileSuffix {
-	char 	suffix[4];
-	OSType	suffType;
-	OSType	suffCreator;
-};
-short			fNumSuffices;
-FileSuffix *	fSuffices;
+	enum
+	{
+		kNoResource = -1,
+		kDefaultResourceID = 10240
+	};
 
-void ConfigureSuffices(short numSuffices, FileSuffix * suffices);
+	static GUSIConfiguration *Instance();
+	static GUSIConfiguration *CreateInstance(short resourceID = kDefaultResourceID);
 
-OSType		fDefaultType;
-OSType		fDefaultCreator;
+	struct FileSuffix
+	{
+		char suffix[4];
+		OSType suffType;
+		OSType suffCreator;
+	};
+	short fNumSuffices;
+	FileSuffix *fSuffices;
 
-void ConfigureDefaultTypeCreator(OSType defaultType, OSType defaultCreator);
-void SetDefaultFType(const GUSIFileSpec & name) const;
+	void ConfigureSuffices(short numSuffices, FileSuffix *suffices);
 
-	
-bool fAutoSpin;
+	OSType fDefaultType;
+	OSType fDefaultCreator;
 
-void ConfigureAutoSpin(bool autoSpin);
-void AutoSpin() const;
+	void ConfigureDefaultTypeCreator(OSType defaultType, OSType defaultCreator);
+	void SetDefaultFType(const GUSIFileSpec &name) const;
 
-	
-bool fAutoInitGraf;
+	bool fAutoSpin;
 
-void ConfigureAutoInitGraf(bool autoInitGraf);
-void AutoInitGraf();
+	void ConfigureAutoSpin(bool autoSpin);
+	void AutoSpin() const;
 
-	
-bool fAccurateStat;
+	bool fAutoInitGraf;
 
-void ConfigureAccurateStat(bool accurateState);
+	void ConfigureAutoInitGraf(bool autoInitGraf);
+	void AutoInitGraf();
 
-bool		fSigPipe;
+	bool fAccurateStat;
 
-void ConfigureSigPipe(bool sigPipe);
-void BrokenPipe();
+	void ConfigureAccurateStat(bool accurateState);
 
-bool		fSigInt;
+	bool fSigPipe;
 
-void ConfigureSigInt(bool sigInt);
-void CheckInterrupt();
+	void ConfigureSigPipe(bool sigPipe);
+	void BrokenPipe();
 
-bool		fSharedOpen;
+	bool fSigInt;
 
-void ConfigureSharedOpen(bool sharedOpen);
+	void ConfigureSigInt(bool sigInt);
+	void CheckInterrupt();
 
-bool		fHandleAppleEvents;
+	bool fSharedOpen;
 
-void ConfigureHandleAppleEvents(bool handleAppleEvents);
+	void ConfigureSharedOpen(bool sharedOpen);
+
+	bool fHandleAppleEvents;
+
+	void ConfigureHandleAppleEvents(bool handleAppleEvents);
 
 protected:
 	GUSIConfiguration(short resourceID = kDefaultResourceID);
+
 private:
-	
-static GUSIConfiguration * sInstance;
+	static GUSIConfiguration *sInstance;
 
-bool fWeOwnSuffices;
+	bool fWeOwnSuffices;
 
-void DoAutoSpin() const;
+	void DoAutoSpin() const;
 
-void DoAutoInitGraf();
+	void DoAutoInitGraf();
 
-bool CmdPeriod(const EventRecord * event);
-
+	bool CmdPeriod(const EventRecord *event);
 };
 
-
 #if PRAGMA_STRUCT_ALIGN
-#pragma options align=reset
+#pragma options align = reset
 #endif
-
 
 #ifdef __MRC__
 #pragma noinline_func GUSISetupConfig
@@ -100,29 +98,28 @@ bool CmdPeriod(const EventRecord * event);
 
 extern "C" void GUSISetupConfig();
 
-
-inline GUSIConfiguration * GUSIConfiguration::Instance()
+inline GUSIConfiguration *GUSIConfiguration::Instance()
 {
 	if (!sInstance)
 		GUSISetupConfig();
 	if (!sInstance)
 		sInstance = new GUSIConfiguration();
-	
+
 	return sInstance;
 }
 
-inline GUSIConfiguration * GUSIConfiguration::CreateInstance(short resourceID)
+inline GUSIConfiguration *GUSIConfiguration::CreateInstance(short resourceID)
 {
 	if (!sInstance)
 		sInstance = new GUSIConfiguration(resourceID);
-	
+
 	return sInstance;
 }
 
 inline void GUSIConfiguration::ConfigureDefaultTypeCreator(OSType defaultType, OSType defaultCreator)
 {
-	fDefaultType	= defaultType;
-	fDefaultCreator	= defaultCreator;
+	fDefaultType = defaultType;
+	fDefaultCreator = defaultCreator;
 }
 
 inline void GUSIConfiguration::ConfigureAutoSpin(bool autoSpin)
@@ -132,26 +129,32 @@ inline void GUSIConfiguration::ConfigureAutoSpin(bool autoSpin)
 
 inline void GUSIConfiguration::ConfigureAutoInitGraf(bool autoInitGraf)
 {
-	fAutoInitGraf 	= autoInitGraf;
+	fAutoInitGraf = autoInitGraf;
 }
 
 inline void GUSIConfiguration::ConfigureSigPipe(bool sigPipe)
 {
-	fSigPipe 	= sigPipe;
+	fSigPipe = sigPipe;
 }
 
 inline void GUSIConfiguration::ConfigureSigInt(bool sigInt)
 {
-	fSigInt 	= sigInt;
+	fSigInt = sigInt;
 }
 
 inline void GUSIConfiguration::ConfigureAccurateStat(bool accurateStat)
 {
-	fAccurateStat 	= accurateStat;
+	fAccurateStat = accurateStat;
 }
 inline void GUSIConfiguration::ConfigureSharedOpen(bool sharedOpen)
 {
-	fSharedOpen 	= sharedOpen;
+	fSharedOpen = sharedOpen;
+}
+
+inline void GUSIConfiguration::AutoInitGraf()
+{
+	if (fAutoInitGraf)
+		DoAutoInitGraf();
 }
 
 #endif /* GUSI_SOURCE */
